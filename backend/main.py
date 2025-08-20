@@ -16,6 +16,10 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from langfuse import Langfuse, get_client 
+from evaluation import run_evaluation
+ 
+
 # Load environment variables
 load_dotenv()
 
@@ -36,7 +40,7 @@ from tts_service import tts_service
 brain_instance = None
 zoe_instance = None
 
-
+langfuse = get_client()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
@@ -91,6 +95,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# LangFuse connection (logging and tracing) 
+langfuse = Langfuse(
+    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+    secret_key=os.getenv("LANGFUSE_SECRET_KEY"), 
+    host="https://cloud.langfuse.com" )
 
 # Pydantic models for API validation
 class APIBrainRequest(BaseModel):
@@ -251,6 +260,14 @@ async def zoe_chat_endpoint(
         session_id = request.get("session_id")
         user_context = request.get("user_context", {})
         
+        # Check ACE score restriction - prevent chat access for scores >= 4
+        ace_score = user_context.get("ace_score", 0)
+        if ace_score >= 4:
+            raise HTTPException(
+                status_code=403, 
+                detail="Chat access is restricted for your safety. Please contact info@thinkround.org to learn more about our Trauma Transformation Training program."
+            )
+        
         # Validate required fields
         if not message or not message.strip():
             raise HTTPException(status_code=400, detail="Message is required and cannot be empty")
@@ -258,14 +275,37 @@ async def zoe_chat_endpoint(
         if len(message) > 10000:
             raise HTTPException(status_code=400, detail="Message too long (max 10,000 characters)")
         
-        # Process message through Zoe with conversation management
-        response = await zoe.process_message(
-            message=message,
-            user_context=user_context,
-            application="chatbot",
-            session_id=session_id,
-            user_id=user_id
-        )
+        with langfuse.start_as_current_span(name="zoe-chat-interaction") as root_span:
+            # Run the main processing inside the span for better tracing
+            response = await zoe.process_message(
+                message=message,
+                user_context=user_context,
+                application="chatbot",
+                session_id=session_id,
+                user_id=user_id
+            )
+            
+            # Update trace attributes
+            root_span.update_trace(
+                session_id=session_id,
+                input={"user_input": message, "user_context": user_context}, 
+                output={"bot_response": response.get("response", "")},
+                metadata={"user_id": user_id}
+            )
+            
+            # Fetch trace_id and run evaluator inside the active context
+            trace_id = langfuse.get_current_trace_id()
+            if trace_id:  
+                eval_results = {}
+                user_input = message
+                bot_message = response.get("response", "")
+                
+                eval_results = await run_evaluation(user_input, bot_message)
+                
+                # Optionally log the evaluator results into the same span
+                root_span.update_trace(
+                    metadata={"evaluation_results": eval_results}
+                )
         
         return response
         
@@ -397,6 +437,16 @@ async def legacy_chat_endpoint(
         session_id = request.get("session_id")
         user_context = request.get("user_context", {})
         
+        # Check ACE score restriction - prevent chat access for scores >= 4
+        ace_score = user_context.get("ace_score", 0)
+        if ace_score >= 4:
+            return {
+                "response": "Chat access is restricted for your safety. Please contact info@thinkround.org to learn more about our Trauma Transformation Training program.",
+                "success": False,
+                "error": "ACE score restriction",
+                "restricted": True,
+                "timestamp": datetime.now().isoformat()
+            }
 
         
         # Validate required fields
