@@ -39,7 +39,7 @@ class ThinkxLifeBrain:
         if self._initialized:
             return
             
-        self.config = config or self._get_default_config()
+        self.config = self._get_default_config()
         self.providers = {}
         
         # Analytics
@@ -67,6 +67,12 @@ class ThinkxLifeBrain:
                 "openai": {
                     "enabled": True,
                     "model": "gpt-4o-mini",
+                    "max_tokens": 2000,
+                    "temperature": 0.7
+                },
+                "gemini": {
+                    "enabled": True,
+                    "model": "gemini-1.5-flash",
                     "max_tokens": 2000,
                     "temperature": 0.7
                 }
@@ -101,15 +107,29 @@ class ThinkxLifeBrain:
     def _initialize_providers(self):
         """Initialize AI providers based on configuration"""
         provider_configs = self.config["providers"]
+        logger.info(f"Available provider configs: {provider_configs.keys()}")
         
-        # Initialize only OpenAI Provider
-        try:
-            if provider_configs.get("openai", {}).get("enabled", False):
+        # OpenAI
+        if provider_configs.get("openai", {}).get("enabled", False):
+        # Initialize OpenAI Provider
+            try:
                 from .providers.openai import OpenAIProvider
                 self.providers["openai"] = OpenAIProvider(provider_configs["openai"])
                 logger.info("OpenAI provider initialized")
-        except ImportError:
-            logger.warning("OpenAI provider not available")
+            except Exception as e:
+                logger.warning(f"OpenAI provider initialization failed: {str(e)}")
+            
+        # Gemini
+        if provider_configs.get("gemini", {}).get("enabled", False):
+            try:
+                from .providers.gemini import GeminiProvider
+                self.providers["gemini"] = GeminiProvider(provider_configs["gemini"])
+                logger.info("Gemini provider initialized")
+            except ImportError:
+                logger.warning("Gemini provider not available")
+        
+        if not self.providers:
+            logger.error("No providers initialized successfully")
     
     async def process_request(self, request_data):
         """
@@ -212,7 +232,7 @@ class ThinkxLifeBrain:
         enhanced_request = {
             "message": request_data["message"],
             "system_prompt": system_prompt,
-            "user_context": request_data.get("user_context", {}),
+            "user_context": request_data.get("user_context", {}),  
             "application": "healing-rooms",
             "trauma_safe": True
         }
@@ -325,28 +345,64 @@ class ThinkxLifeBrain:
         # Use OpenAI provider
         if "openai" in self.providers:
             return self.providers["openai"]
+        elif "gemini" in self.providers:
+            return self.providers["gemini"]
         
         raise RuntimeError("No available providers")
     
     def _get_healing_rooms_prompt(self, user_context):
         """Get trauma-informed system prompt for healing rooms"""
         ace_score = user_context.get("ace_score", 0.0)
+        ace_details = user_context.get("ace_details", [])
         
-        return f"""You are a trauma-informed AI assistant for ThinkxLife's healing rooms. 
+        # Create sensitive context about specific trauma areas without being explicit
+        trauma_context = ""
+        if ace_details:
+            trauma_areas = []
+            for detail in ace_details:
+                if "swear at you" in detail or "insult you" in detail:
+                    trauma_areas.append("emotional abuse")
+                elif "push, grab, slap" in detail:
+                    trauma_areas.append("physical abuse")
+                elif "touch, fondle" in detail:
+                    trauma_areas.append("sexual abuse")
+                elif "no one in your family loved you" in detail:
+                    trauma_areas.append("emotional neglect")
+                elif "didn't have enough to eat" in detail:
+                    trauma_areas.append("physical neglect")
+                elif "parents ever separated" in detail:
+                    trauma_areas.append("family dysfunction")
+                elif "mother or stepmother" in detail and "pushed" in detail:
+                    trauma_areas.append("domestic violence")
+                elif "problem drinker" in detail or "street drugs" in detail:
+                    trauma_areas.append("household substance abuse")
+                elif "depressed, mentally ill" in detail:
+                    trauma_areas.append("household mental illness")
+                elif "jail or prison" in detail:
+                    trauma_areas.append("household member incarceration")
+            
+            if trauma_areas:
+                unique_areas = list(set(trauma_areas))
+                trauma_context = f"\n- Specific areas of concern include: {', '.join(unique_areas)}"
+        
+        return f"""You are Zoe, an empathetic AI companion for ThinkxLife's healing rooms. 
         
         Guidelines:
         - Always prioritize user safety and emotional well-being
-        - Use gentle, non-triggering language
-        - Acknowledge trauma without re-traumatizing
+        - Use gentle, non-triggering language that validates their experiences
+        - Acknowledge trauma without re-traumatizing or being explicit
         - Focus on healing, growth, and resilience
         - Never provide medical or therapeutic advice
         - Encourage professional help when appropriate
+        - Be especially gentle and validating given their trauma history
         
         User Context:
         - ACE Score: {ace_score}
-        - This indicates {'higher' if ace_score > 4 else 'moderate' if ace_score > 1 else 'lower'} trauma exposure
+        - This indicates {'higher' if ace_score > 4 else 'moderate' if ace_score > 1 else 'lower'} trauma exposure{trauma_context}
+        - Respond with extra empathy, validation, and hope
+        - Acknowledge their strength in surviving and seeking support
         
-        Respond with empathy, validation, and hope."""
+        Remember: This person has shown courage by sharing their story. Treat them with the utmost care and respect."""
     
     def _get_ai_awareness_prompt(self, user_context):
         """Get system prompt for Inside our AI showcase"""
@@ -403,16 +459,27 @@ class ThinkxLifeBrain:
     
     def _get_general_prompt(self, user_context):
         """Get general system prompt"""
-        return """You are ThinkxLife's general AI assistant.
+        ace_score = user_context.get("ace_score", 0.0)
+        
+        # Add trauma-sensitive context if ACE score is present
+        trauma_sensitivity = ""
+        if ace_score > 0:
+            trauma_sensitivity = """
+        - Use trauma-informed language and approaches
+        - Be especially gentle and validating
+        - Acknowledge the user's strength and resilience
+        - Avoid triggering language or assumptions"""
+        
+        return f"""You are Zoe, ThinkxLife's empathetic AI assistant.
         
         Guidelines:
-        - Be helpful and informative
+        - Be helpful, empathetic, and supportive
         - Maintain ethical AI principles
-        - Respect user privacy
-        - Promote wellbeing and positive outcomes
-        - Stay within your knowledge and capabilities
+        - Respect user privacy and boundaries
+        - Promote wellbeing and positive mental health
+        - Stay within your knowledge and capabilities{trauma_sensitivity}
         
-        Assist users with general inquiries about ThinkxLife platform."""
+        Assist users with warmth and understanding while maintaining appropriate boundaries."""
     
     async def _ensure_trauma_safety(self, response, user_context):
         """Ensure response is trauma-safe"""
@@ -486,3 +553,4 @@ class ThinkxLifeBrain:
                 await provider.close()
         
         logger.info("ThinkxLife Brain shutdown complete") 
+
