@@ -144,16 +144,13 @@ export default function ChatInterface({
 
 Let me be transparent about our interaction:
 
-🤖 I am an AI assistant, not a human:
-• I cannot diagnose or treat mental health conditions
-• I cannot provide professional therapy or counseling
-• I cannot handle crisis or emergency situations
+I am an AI assistant, not a human:
+• I cannot diagnose, treat, or provide professional therapy for mental health conditions
 
-💙 How I can support you:
-• Offer empathetic, non-judgmental conversation
-• Listen to your thoughts and experiences
-• Share general wellness information and coping ideas
-• Provide a safe space for reflection
+How I can support you:
+• Provide empathetic, non-judgmental conversation and active listening
+• Share general wellness information and coping strategies
+• Offer a safe space for reflection and processing your thoughts
 
 I'm here to listen and support you. What's on your mind today?`;
     } else if (aceScore <= 6) {
@@ -161,16 +158,13 @@ I'm here to listen and support you. What's on your mind today?`;
 
 Let me be transparent about our interaction:
 
-🤖 I am an AI assistant, not a human:
-• I cannot diagnose or treat mental health conditions
-• I cannot provide professional therapy or counseling
-• I cannot handle crisis or emergency situations
+I am an AI assistant, not a human:
+• I cannot diagnose, treat, or provide professional therapy for mental health conditions
 
-💙 How I can support you:
-• Offer empathetic, non-judgmental conversation
-• Listen to your thoughts and experiences
-• Share general wellness information and coping ideas
-• Provide a safe space for reflection
+How I can support you:
+• Provide empathetic, non-judgmental conversation and active listening
+• Share general wellness information and coping strategies
+• Offer a safe space for reflection and processing your thoughts
 
 I'm here to listen and support you. What's on your mind today?`;
     } else {
@@ -178,16 +172,13 @@ I'm here to listen and support you. What's on your mind today?`;
 
 Let me be transparent about our interaction:
 
-🤖 I am an AI assistant, not a human:
-• I cannot diagnose or treat mental health conditions
-• I cannot provide professional therapy or counseling
-• I cannot handle crisis or emergency situations
+I am an AI assistant, not a human:
+• I cannot diagnose, treat, or provide professional therapy for mental health conditions
 
-💙 How I can support you:
-• Offer empathetic, non-judgmental conversation
-• Listen to your thoughts and experiences
-• Share general wellness information and coping ideas
-• Provide a safe space for reflection
+How I can support you:
+• Provide empathetic, non-judgmental conversation and active listening
+• Share general wellness information and coping strategies
+• Offer a safe space for reflection and processing your thoughts
 
 I'm here to listen and support you. What's on your mind today?`;
     }
