@@ -13,3 +13,5 @@ anthropic
 pandas
 numpy
 httpx
+langfuse
+google-generativeai

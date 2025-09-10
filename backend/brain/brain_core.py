@@ -39,7 +39,7 @@ class ThinkxLifeBrain:
         if self._initialized:
             return
             
-        self.config = config or self._get_default_config()
+        self.config = self._get_default_config()
         self.providers = {}
         
         # Analytics
@@ -67,6 +67,12 @@ class ThinkxLifeBrain:
                 "openai": {
                     "enabled": True,
                     "model": "gpt-4o-mini",
+                    "max_tokens": 2000,
+                    "temperature": 0.7
+                },
+                "gemini": {
+                    "enabled": True,
+                    "model": "gemini-1.5-flash",
                     "max_tokens": 2000,
                     "temperature": 0.7
                 }
@@ -101,15 +107,29 @@ class ThinkxLifeBrain:
     def _initialize_providers(self):
         """Initialize AI providers based on configuration"""
         provider_configs = self.config["providers"]
+        logger.info(f"Available provider configs: {provider_configs.keys()}")
         
-        # Initialize only OpenAI Provider
-        try:
-            if provider_configs.get("openai", {}).get("enabled", False):
+        # OpenAI
+        if provider_configs.get("openai", {}).get("enabled", False):
+        # Initialize OpenAI Provider
+            try:
                 from .providers.openai import OpenAIProvider
                 self.providers["openai"] = OpenAIProvider(provider_configs["openai"])
                 logger.info("OpenAI provider initialized")
-        except ImportError:
-            logger.warning("OpenAI provider not available")
+            except Exception as e:
+                logger.warning(f"OpenAI provider initialization failed: {str(e)}")
+            
+        # Gemini
+        if provider_configs.get("gemini", {}).get("enabled", False):
+            try:
+                from .providers.gemini import GeminiProvider
+                self.providers["gemini"] = GeminiProvider(provider_configs["gemini"])
+                logger.info("Gemini provider initialized")
+            except ImportError:
+                logger.warning("Gemini provider not available")
+        
+        if not self.providers:
+            logger.error("No providers initialized successfully")
     
     async def process_request(self, request_data):
         """
@@ -212,7 +232,7 @@ class ThinkxLifeBrain:
         enhanced_request = {
             "message": request_data["message"],
             "system_prompt": system_prompt,
-            "user_context": request_data.get("user_context", {}),
+            "user_context": request_data.get("user_context", {}),  
             "application": "healing-rooms",
             "trauma_safe": True
         }
@@ -325,6 +345,8 @@ class ThinkxLifeBrain:
         # Use OpenAI provider
         if "openai" in self.providers:
             return self.providers["openai"]
+        elif "gemini" in self.providers:
+            return self.providers["gemini"]
         
         raise RuntimeError("No available providers")
     
@@ -531,3 +553,4 @@ class ThinkxLifeBrain:
                 await provider.close()
         
         logger.info("ThinkxLife Brain shutdown complete") 
+
