@@ -36,23 +36,28 @@ class GeminiProvider:
         load_dotenv()  # Ensure .env is loaded for API key
         
         self.config = config
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        self.model = config.get("model", "gemini-1.5-flash")
+        self.api_key = config.get("api_key") or os.getenv("GEMINI_API_KEY")
+        self.model_name = config.get("model", "gemini-1.5-flash")
         self.max_tokens = config.get("max_tokens", 2000)
         self.temperature = config.get("temperature", 0.7)
         self.timeout = config.get("timeout", 30.0)
         self.enabled = config.get("enabled", False)
         
         if not self.api_key:
-            raise ValueError("Gemini API key is required in .env file")
+            logger.warning("Gemini API key not found - provider will be disabled")
+            self.enabled = False
+            self.model = None
+            return
             
-        # Configure the SDK
-        genai.configure(api_key=self.api_key)
-        
-        # Initialize the model
-        self.model = genai.GenerativeModel(self.model)
-        
-        logger.info(f"Gemini provider initialized with model: {self.model}")
+        # Configure the SDK and initialize model
+        try:
+            genai.configure(api_key=self.api_key)
+            self.model = genai.GenerativeModel(self.model_name)
+            logger.info(f"Gemini provider initialized with model: {self.model_name}")
+        except Exception as e:
+            logger.error(f"Failed to initialize Gemini client: {str(e)}")
+            self.enabled = False
+            self.model = None
     
     async def process_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -67,10 +72,10 @@ class GeminiProvider:
         start_time = time.time()
         
         try:
-            if not self.enabled:
+            if not self.enabled or not self.model:
                 return {
                     "success": False,
-                    "error": "Gemini provider is disabled",
+                    "error": "Gemini provider is disabled or not configured",
                     "timestamp": datetime.now().isoformat()
                 }
             
@@ -137,7 +142,7 @@ class GeminiProvider:
                 "timestamp": datetime.now().isoformat(),
                 "metadata": {
                     "provider": "gemini",
-                    "model": str(self.model),
+                    "model": self.model_name,
                     "tokens_used": tokens_used,
                     "processing_time": time.time() - start_time,
                     "application": application,
@@ -183,10 +188,10 @@ class GeminiProvider:
         """Check the health of the Gemini provider"""
         
         try:
-            if not self.enabled:
+            if not self.enabled or not self.model:
                 return {
                     "status": "disabled",
-                    "message": "Gemini provider is disabled"
+                    "message": "Gemini provider is disabled or not configured"
                 }
             
             # Test API connectivity asynchronously
@@ -229,7 +234,7 @@ class GeminiProvider:
         return {
             "provider": "gemini",
             "enabled": self.enabled,
-            "model": self.model,
+            "model": self.model_name,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "timeout": self.timeout,
