@@ -147,10 +147,11 @@ class ThinkxLifeBrain:
                 logger.warning(f"ChromaDB not found at {chroma_db_dir}. Run build_index.py first.")
                 return
             
-            # Initialize embeddings
+            # Initialize embeddings - try OpenAI first, then alternatives
             openai_api_key = os.getenv("OPENAI_API_KEY")
             if not openai_api_key:
-                logger.error("OPENAI_API_KEY not found - RAG disabled")
+                logger.warning("OPENAI_API_KEY not found - RAG will be disabled")
+                logger.info("To enable RAG functionality, configure OPENAI_API_KEY in your environment")
                 return
             
             self.embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
@@ -164,7 +165,8 @@ class ThinkxLifeBrain:
             logger.info(f"RAG vectorstore initialized from {chroma_db_dir}")
             
         except Exception as e:
-            logger.error(f"Failed to initialize RAG vectorstore: {str(e)}")
+            logger.warning(f"Failed to initialize RAG vectorstore: {str(e)}")
+            logger.info("RAG functionality will be disabled - responses will use base knowledge only")
             self.vectorstore = None
 
     def _initialize_providers(self):
@@ -174,11 +176,14 @@ class ThinkxLifeBrain:
         
         # OpenAI
         if provider_configs.get("openai", {}).get("enabled", False):
-        # Initialize OpenAI Provider
             try:
                 from .providers.openai import OpenAIProvider
-                self.providers["openai"] = OpenAIProvider(provider_configs["openai"])
-                logger.info("OpenAI provider initialized")
+                openai_provider = OpenAIProvider(provider_configs["openai"])
+                if openai_provider.enabled:
+                    self.providers["openai"] = openai_provider
+                    logger.info("OpenAI provider initialized successfully")
+                else:
+                    logger.warning("OpenAI provider disabled due to missing configuration")
             except Exception as e:
                 logger.warning(f"OpenAI provider initialization failed: {str(e)}")
             
@@ -186,13 +191,19 @@ class ThinkxLifeBrain:
         if provider_configs.get("gemini", {}).get("enabled", False):
             try:
                 from .providers.gemini import GeminiProvider
-                self.providers["gemini"] = GeminiProvider(provider_configs["gemini"])
-                logger.info("Gemini provider initialized")
-            except ImportError:
-                logger.warning("Gemini provider not available")
+                gemini_provider = GeminiProvider(provider_configs["gemini"])
+                if gemini_provider.enabled:
+                    self.providers["gemini"] = gemini_provider
+                    logger.info("Gemini provider initialized successfully")
+                else:
+                    logger.warning("Gemini provider disabled due to missing configuration")
+            except Exception as e:
+                logger.warning(f"Gemini provider initialization failed: {str(e)}")
         
         if not self.providers:
-            logger.error("No providers initialized successfully")
+            logger.warning("No providers initialized successfully - Brain will have limited functionality")
+        else:
+            logger.info(f"Initialized providers: {list(self.providers.keys())}")
     
     async def process_request(self, request_data):
         """
@@ -606,12 +617,16 @@ Instructions: Use this information to provide helpful, accurate responses while 
     def _select_provider(self, application):
         """Select the best provider for the request"""
         
-        # Use OpenAI provider
+        if not self.providers:
+            raise RuntimeError("No providers available - ensure at least one API key is configured")
+        
+        # Use OpenAI provider first if available
         if "openai" in self.providers:
             return self.providers["openai"]
         elif "gemini" in self.providers:
             return self.providers["gemini"]
         
+        # This should not happen due to the check above, but just in case
         raise RuntimeError("No available providers")
     
     def _get_healing_rooms_prompt(self, user_context):
