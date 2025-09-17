@@ -1,6 +1,8 @@
 from brain.brain_core import ThinkxLifeBrain
-import json,asyncio,re
+import json, asyncio, re, time, statistics
 import google.generativeai as genai
+from datetime import datetime
+from typing import Dict, Any, Optional, List
 
 class TraumaAwareEvaluator:
     def __init__(self, brain_instance: ThinkxLifeBrain = None):
@@ -211,31 +213,272 @@ class TraumaAwareEvaluator:
                 "reasoning": {a: "Parsing failed" for a in self.aspects}
             }
 
-# Global evaluator instance
-evaluator = TraumaAwareEvaluator()
+class ResponseLatencyEvaluator:
+    """Evaluates response time performance"""
+
+    def __init__(self):
+        self.response_times = []
+
+    async def evaluate_latency(
+        self,
+        start_time: float,
+        end_time: float,
+        context: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Evaluate response latency
+
+        Args:
+            start_time: Request start timestamp
+            end_time: Response completion timestamp
+            context: Additional context for evaluation
+
+        Returns:
+            Dict containing latency metrics
+        """
+        latency = end_time - start_time
+        self.response_times.append(latency)
+
+        # Performance thresholds (in seconds)
+        excellent_threshold = 2.0
+        good_threshold = 5.0
+        acceptable_threshold = 10.0
+
+        if latency <= excellent_threshold:
+            performance_score = 1.0
+            performance_category = "excellent"
+        elif latency <= good_threshold:
+            performance_score = 0.8
+            performance_category = "good"
+        elif latency <= acceptable_threshold:
+            performance_score = 0.6
+            performance_category = "acceptable"
+        else:
+            performance_score = 0.3
+            performance_category = "poor"
+
+        # Calculate running statistics
+        avg_latency = statistics.mean(self.response_times[-100:])  # Last 100 responses
+
+        result = {
+            "response_latency": latency,
+            "performance_score": performance_score,
+            "performance_category": performance_category,
+            "average_latency_recent": avg_latency,
+            "threshold_excellent": excellent_threshold,
+            "threshold_good": good_threshold,
+            "evaluation_timestamp": datetime.now().isoformat()
+        }
+
+        return result
 
 
-# Helper function to run all evaluations    
-async def run_evaluation(user_message: str, bot_message: str):
+class LanguageAccessibilityEvaluator:
+    """Evaluates language accessibility using LLM-as-judge"""
+
+    def __init__(self, brain_instance=None):
+        self.brain = brain_instance
+
+    async def evaluate_accessibility(
+        self,
+        user_message: str,
+        bot_message: str,
+        context: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Evaluate language accessibility using LLM evaluation
+
+        Args:
+            user_message: User's message for context
+            bot_message: Bot response text to evaluate
+            context: User context including emotional state
+
+        Returns:
+            Dict containing accessibility score and reasoning
+        """
+        if not bot_message or not bot_message.strip():
+            return {
+                "accessibility_score": 0.0,
+                "error": "Empty response provided",
+                "evaluation_timestamp": datetime.now().isoformat()
+            }
+
+        try:
+            # Create evaluation prompt
+            evaluation_prompt = f"""
+Evaluate the language accessibility of this empathetic bot response:
+
+USER MESSAGE: "{user_message}"
+BOT RESPONSE: "{bot_message}"
+
+Is this bot response linguistically accessible and clear for someone seeking emotional support?
+
+Consider:
+- Is the language clear and understandable?
+- Would this make sense to someone in emotional distress?
+- Are there unnecessarily complex or confusing terms?
+- Is the tone appropriate for the emotional context?
+
+Return only JSON:
+{{
+    "accessibility_score": <number between 0.0 and 1.0>,
+    "reasoning": "<brief explanation of the score>"
+}}
+"""
+
+            # Send to LLM for evaluation
+            if self.brain and self.brain.providers.get("gemini"):
+                gemini_provider = self.brain.providers["gemini"]
+
+                generation_config = genai.types.GenerationConfig(
+                    max_output_tokens=gemini_provider.max_tokens,
+                    temperature=gemini_provider.temperature,
+                    response_mime_type="application/json"
+                )
+
+                try:
+                    response_obj = await asyncio.wait_for(
+                        gemini_provider.model.generate_content_async(
+                            contents=evaluation_prompt,
+                            generation_config=generation_config
+                        ),
+                        timeout=gemini_provider.timeout
+                    )
+
+                    llm_response = response_obj.text
+                    parsed_result = self._parse_llm_response(llm_response)
+
+                    if parsed_result:
+                        result = parsed_result
+                    else:
+                        result = {"accessibility_score": 0.5, "reasoning": "Failed to parse LLM response"}
+
+                except asyncio.TimeoutError:
+                    result = {"accessibility_score": 0.5, "reasoning": "LLM evaluation timed out"}
+                except Exception as e:
+                    result = {"accessibility_score": 0.5, "reasoning": f"LLM evaluation failed: {str(e)}"}
+            else:
+                result = {"accessibility_score": 0.5, "reasoning": "No Gemini provider available"}
+
+            # Add metadata
+            result.update({
+                "evaluation_timestamp": datetime.now().isoformat(),
+                "response_length": len(bot_message.split()),
+                "evaluation_method": "llm_judge"
+            })
+
+            return result
+
+        except Exception as e:
+            return {
+                "accessibility_score": 0.0,
+                "error": str(e),
+                "evaluation_timestamp": datetime.now().isoformat()
+            }
+
+    def _parse_llm_response(self, llm_response: str) -> Optional[Dict[str, Any]]:
+        """Parse LLM JSON response"""
+        try:
+            # Find JSON in response
+            start_idx = llm_response.find('{')
+            end_idx = llm_response.rfind('}') + 1
+
+            if start_idx >= 0 and end_idx > start_idx:
+                json_str = llm_response[start_idx:end_idx]
+                parsed = json.loads(json_str)
+
+                # Validate and clamp score
+                if "accessibility_score" in parsed:
+                    score = float(parsed["accessibility_score"])
+                    parsed["accessibility_score"] = max(0.0, min(1.0, score))
+                    return parsed
+
+        except (json.JSONDecodeError, ValueError, KeyError):
+            pass
+
+        return None
+
+
+# Global evaluator instances
+trauma_evaluator = TraumaAwareEvaluator()
+latency_evaluator = ResponseLatencyEvaluator()
+accessibility_evaluator = LanguageAccessibilityEvaluator()
+
+
+# Helper function to run all evaluations
+async def run_evaluation(user_message: str, bot_message: str, start_time: float = None, end_time: float = None):
     """
-    Run all trauma-informed evaluations on a bot response.
-    
-    Returns a dictionary with:
+    Run all evaluations on a bot response.
+
+    Args:
+        user_message: User's input message
+        bot_message: Bot's response message
+        start_time: Optional start timestamp for latency evaluation
+        end_time: Optional end timestamp for latency evaluation
+
+      Returns a dictionary with:
     - empathy assessment
     - trigger detection
     - crisis/safety evaluation
+    - performance evaluations (latency)
+    - accessibility evaluation 
     """
-    # Run evaluations concurrently to save time
-    empathy_task = asyncio.create_task(evaluator.evaluate_empathy(user_message, bot_message))
-    trigger_task = asyncio.create_task(evaluator.evaluate_trigger(user_message, bot_message))
-    crisis_task = asyncio.create_task(evaluator.evaluate_crisis(user_message, bot_message))
-    
-    empathy_result = await empathy_task
-    trigger_result = await trigger_task
-    crisis_result = await crisis_task
-    
-    return {
+    # Prepare evaluation tasks
+    evaluation_tasks = []
+
+    # Trauma-informed evaluations
+    evaluation_tasks.extend([
+        asyncio.create_task(trauma_evaluator.evaluate_empathy(user_message, bot_message)),
+        asyncio.create_task(trauma_evaluator.evaluate_trigger(user_message, bot_message)),
+        asyncio.create_task(trauma_evaluator.evaluate_crisis(user_message, bot_message))
+    ])
+
+    # Accessibility evaluation
+    evaluation_tasks.append(
+        asyncio.create_task(accessibility_evaluator.evaluate_accessibility(user_message, bot_message))
+    )
+
+    # Latency evaluation (only if timestamps provided)
+    latency_result = None
+    if start_time is not None and end_time is not None:
+        latency_result = await latency_evaluator.evaluate_latency(start_time, end_time)
+
+    # Run trauma and accessibility evaluations concurrently
+    empathy_result, trigger_result, crisis_result, accessibility_result = await asyncio.gather(*evaluation_tasks)
+
+    results = {
         "empathy": empathy_result,
         "trigger": trigger_result,
-        "crisis": crisis_result
+        "crisis": crisis_result,
+        "accessibility": accessibility_result
     }
+
+    # Add latency results if available
+    if latency_result:
+        results["latency"] = latency_result
+
+    # Calculate overall quality score
+    quality_scores = []
+
+    # Extract scores from each evaluation
+    if isinstance(empathy_result, dict) and "scores" in empathy_result:
+        empathy_scores = empathy_result["scores"]
+        if empathy_scores:
+            quality_scores.append(statistics.mean(empathy_scores.values()))
+
+    if isinstance(crisis_result, dict) and "overall_score" in crisis_result and crisis_result["overall_score"] is not None:
+        quality_scores.append(crisis_result["overall_score"])
+
+    if isinstance(accessibility_result, dict) and "accessibility_score" in accessibility_result:
+        quality_scores.append(accessibility_result["accessibility_score"])
+
+    if latency_result and "performance_score" in latency_result:
+        quality_scores.append(latency_result["performance_score"])
+
+    # Calculate overall score
+    overall_score = statistics.mean(quality_scores) if quality_scores else 0.0
+    results["overall_quality_score"] = overall_score
+    results["metrics_evaluated"] = len(quality_scores)
+    results["evaluation_timestamp"] = datetime.now().isoformat()
+
+    return results
