@@ -16,6 +16,7 @@ import aiosqlite
 from brain.brain_core import ThinkxLifeBrain
 from agents.bard.tools import search_web
 from agents.bard import states, prompts
+from agents import utils
 
 
 logging.basicConfig(level=logging.INFO)
@@ -30,7 +31,7 @@ if brain.config["providers"]["gemini"]["enabled"]:
 
     LLM = ChatGoogleGenerativeAI(
         model=os.getenv("GEMINI_MODEL"),
-        temperature=0.9,     # only for the creative poets
+        temperature=0.9,  # only for the creative poets
         max_tokens=float(os.getenv("GEMINI_MAX_TOKENS")),
         api_key=os.getenv("GEMINI_API_KEY"),
     )
@@ -112,7 +113,7 @@ class StoryTeller:
         messages = [
             SystemMessage(content=prompts.STORYTELLER_PROMPT_ADULTS),
             HumanMessage(
-                content=f"{state.get("task", "")} \n\n Here are the search results: \n\n {state.get('retrieved_content')}"
+                content=f"{state.get("task", "")} \n\n Here are the search results: \n\n {state.get('retrieved_content')}\n\n Here are the conversation history: \n\n {state.get('history')}"
             ),
         ]
 
@@ -121,14 +122,14 @@ class StoryTeller:
         return {
             "node_name": "adults",
             "task": state.get("task", ""),
-            "story": response.content,
+            "output": response.content,
         }
 
     async def kids_node(self, state: states.StoryTellerState):
         messages = [
             SystemMessage(content=prompts.STORYTELLER_PROMPT_KIDS),
             HumanMessage(
-                content=f"{state.get("task", "")} \n\n Here are the search results: \n\n {state.get('retrieved_content')}"
+                content=f"{state.get("task", "")} \n\n Here are the search results: \n\n {state.get('retrieved_content')}\n\n here are the conversation history: \n\n {state.get('history')}"
             ),
         ]
 
@@ -137,7 +138,7 @@ class StoryTeller:
         return {
             "node_name": "kids",
             "task": state.get("task", ""),
-            "story": response.content,
+            "output": response.content,
         }
 
     def decision(self, state: states.StoryTellerState):
@@ -172,9 +173,7 @@ class Chatbot:
                 ),
             ]
 
-            response = await llm.with_structured_output(states.Router).ainvoke(
-                messages
-            )
+            response = await llm.with_structured_output(states.Router).ainvoke(messages)
 
             return {
                 "task": state.get("task", ""),
@@ -208,7 +207,7 @@ class Chatbot:
             return {
                 "node_name": "chat",
                 "task": state.get("task", ""),
-                "story": response.content,
+                "output": response.content,
                 "history": new_history,
             }
 
@@ -221,17 +220,17 @@ class Chatbot:
             new_history = state.get("history", [])
             new_history.append({"role": "user", "content": state["task"]})
             new_history.append(
-                {"role": "assistant", "content": output.get("story", "")}
+                {"role": "assistant", "content": output.get("output", "")}
             )
 
             return {
                 "node_name": "storyteller_agent",
                 "story_state": output,
-                "story": output.get("story", ""),
+                "output": output.get("output", ""),
                 "retrieved_content": output.get("retrieved_content", []),
                 "history": new_history,
             }
-            
+
         storyteller_agent = StoryTeller(llm).storyteller
 
         build_chatbot = StateGraph(states.ChatState)
@@ -266,18 +265,28 @@ class Chatbot:
 
 
 class BardRunner:
-    def __init__(self, chatbot: Chatbot):
+    def __init__(self, chatbot: Chatbot, tracing: bool = False):
         self.bard = chatbot.chatbot
         self.thread_id = None
         self.config = {}
+        self.tracing = tracing
+        self.agent_name = "Bard"
+
+        if tracing:
+            utils.enable_tracing()
 
     async def new_thread(self, Input: str):
         self.thread_id = str(uuid.uuid4())
-        self.config = {"configurable": {"thread_id": self.thread_id}}
+        self.config = {
+            "configurable": {"thread_id": self.thread_id},
+            "session_id": self.thread_id,
+            "tags": [f"session:{self.thread_id}"], # for tracing
+            "metadata": {"source": "BardRunner"},
+        }
         state = states._initialize_state(Input)
         result = await self.bard.ainvoke(state, self.config)
 
-        return {"session_id": self.thread_id, "story": result.get("story", "")}
+        return {"session_id": self.thread_id, "output": result.get("output", "")}
 
     async def existing_thread(self, Input: str):
         if not self.thread_id:
@@ -286,26 +295,34 @@ class BardRunner:
         snapshot = await self.bard.aget_state(self.config)
         state = dict(snapshot.values)
         state["task"] = Input
-        state["next_node"] = ""
+        state["next_node"] = state.get("next_node", "chat")
 
         result = await self.bard.ainvoke(state, config=self.config)
 
-        return {"session_id": self.thread_id, "story": result.get("story", "")}
+        return {"session_id": self.thread_id, "output": result.get("output", "")}
 
     async def get_current_state(self, thread_id: str):
         config = {"configurable": {"thread_id": thread_id}}
-        return await self.bard.aget_state(config)
+        snapshot= await self.bard.aget_state(config)
+        return snapshot.values
+    def get_logs(self, limit: int = 20):
+        """Fetches LLM logs for the entire session"""
+        if not self.thread_id:
+            raise ValueError("No existing thread_id to get logs")
+        return utils.LLMLogs(self.thread_id, limit=limit)
 
 
 if __name__ == "__main__":
 
     async def main():
         chatbot = await Chatbot.build()
-        runner = BardRunner(chatbot)
+        runner = BardRunner(chatbot, tracing=True)
         result = await runner.new_thread("tell me about Ancient Egypt legacy")
-
         print(result)
 
+        logs = runner.get_logs()
+        print(logs)
+
         await chatbot.close()
-        
+
     asyncio.run(main())

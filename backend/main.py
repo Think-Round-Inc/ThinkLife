@@ -9,7 +9,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
@@ -33,8 +33,8 @@ from brain import ThinkxLifeBrain
 # Import Zoe AI Companion
 from zoe import ZoeCore
 
-# Import Bard the storyteller
-from agents.bard import bard_core
+# Import the Agent Orchestrator
+from agents.orchestrator.orchestra import Orchestrator, get_llm
 
 # Import TTS Service
 from tts_service import tts_service
@@ -49,7 +49,7 @@ langfuse = get_client()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
-    global brain_instance, zoe_instance, bard_instance
+    global brain_instance, zoe_instance, orchestrator_instance
 
     # Startup
     logger.info("Starting ThinkxLife Backend with Brain and Zoe integration...")
@@ -74,8 +74,8 @@ async def lifespan(app: FastAPI):
     zoe_instance = ZoeCore(brain_instance)
     logger.info("Zoe AI Companion initialized")
 
-    bard_instance = await bard_core.Chatbot.build()
-    logger.info("Bard the storyteller initialized")
+    orchestrator_instance = Orchestrator(llm=get_llm())
+    logger.info("Agent Orchestrator initialized")
 
     yield
 
@@ -85,8 +85,8 @@ async def lifespan(app: FastAPI):
         await brain_instance.shutdown()
     logger.info("Shutdown complete")
 
-    if bard_instance:
-        await bard_instance.close()
+    if orchestrator_instance:
+        await orchestrator_instance.close()
 
     logger.info("Shutdown complete")
 
@@ -152,17 +152,17 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 
-class AgentRequest(BaseModel):
+class OrchestratorRequest(BaseModel):
     task: str
-    thread_id: Optional[str] = None
+    session_id: Optional[str] = None
 
 
-class BaseAgentResponse(BaseModel):
-    thread_id: str
-
-
-class BardResponse(BaseAgentResponse):
-    story: Optional[str]  # for bard the storyteller
+class OrchestratorResponse(BaseModel):
+    output: str
+    session_id: str
+    agent_name: str
+    trace: Optional[Dict[str, Any]] = None
+    history: Optional[List[Dict[str, Any]]] = None
 
 
 def get_brain() -> ThinkxLifeBrain:
@@ -205,6 +205,7 @@ async def process_brain_request(
             "compliance",
             "exterior-spaces",
             "general",
+            "agent_orchestrator",
         ]
 
         if request.application not in valid_applications:
@@ -642,43 +643,48 @@ async def root():
     }
 
 
-# Bard the storyteller
+# Agent Orchestrator
 
 
-@app.post("/api/agent/bard/chat", response_model=BardResponse)
-async def run_bard(request: AgentRequest):
-    """main entry to run Bard the storyteller
-    the state and checkpoints and handled internally
+@app.post("/api/agent/orchestrator/chat", response_model=OrchestratorResponse)
+async def orchestrator_chat(request: OrchestratorRequest):
     """
-    if bard_instance is None:
-        raise HTTPException(status_code=500, detail="Chatbot is not initialized")
+    Main entrypoint to run Agent Orchestrator.
+    Handles routing, new/existing sessions, tracing, and history internally.
+    """
+    if orchestrator_instance is None:
+        raise HTTPException(status_code=500, detail="Orchestrator is not initialized")
 
-    runner = bard_core.BardRunner(bard_instance)
-
-    input_text = request.task
-    thread_id = request.thread_id
-
-    if thread_id:
-        runner.thread_id = thread_id
-        runner.config = {"configurable": {"thread_id": thread_id}}
-        result = await runner.existing_thread(input_text)
-    else:
-        result = await runner.new_thread(input_text)
-
-    return {"story": result["story"], "thread_id": result["session_id"]}
-
-
-@app.get("/api/agent/bard/state/{thread_id}")
-async def get_state(thread_id: str):
-    """get current state of Bard the storyteller"""
-    if bard_instance is None:
-        raise HTTPException(status_code=500, detail="Chatbot not initialized")
-
-    runner = bard_core.BardRunner(bard_instance)
     try:
-        snapshot = await runner.get_current_state(thread_id)
-        return snapshot
+        result = await orchestrator_instance.orchestrate(
+            Input=request.task,
+            session_id=request.session_id,  # orchestrator handles new/existing
+        )
+
+        return OrchestratorResponse(**result)
+
     except Exception as e:
+        logger.exception("Error running orchestrator")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/agent/orchestrator/state/{session_id}")
+async def orchestrator_state(session_id: str):
+    """
+    Get the current state of any orchestrated agent session.
+    """
+    if orchestrator_instance is None:
+        raise HTTPException(status_code=500, detail="Orchestrator is not initialized")
+
+    if session_id not in orchestrator_instance.sessions:
+        raise HTTPException(status_code=404, detail="Unknown session_id")
+
+    runner = orchestrator_instance.sessions[session_id]
+    try:
+        snapshot = await runner.get_current_state(session_id)
+        return {"session_id": session_id, "state": snapshot}
+    except Exception as e:
+        logger.exception("Error getting session state")
         raise HTTPException(status_code=500, detail=str(e))
 
 

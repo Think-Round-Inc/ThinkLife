@@ -22,7 +22,7 @@ class StoryTellerState(TypedDict):
     task: str
     age: Any
     retrieved_content: List[Dict]
-    story: str
+    output: str
     next_node: str
     node_name: str
 
@@ -31,7 +31,7 @@ class ChatState(TypedDict):
     task: str
     age: Any
     history: List[Dict]
-    story: str
+    output: str
     story_state: StoryTellerState
     next_node: str
     node_name: str
@@ -52,7 +52,7 @@ def _initialize_state(Input) -> ChatState:
         "story_state": {
             "task": "",
             "age": age,
-            "story": "",
+            "output": "",
             "retrieved_content": [],
             "history": [],
             "next_node": "",
