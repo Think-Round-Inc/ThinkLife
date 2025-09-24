@@ -142,7 +142,110 @@ class TraumaAwareEvaluator:
             return {"error": "Failed to parse empathy JSON"}
         
         
-        
+    async def evaluate_politeness(self, user_message: str, bot_message: str):
+        """
+        Politeness / Professionalism (0–2):
+        0 = Not polite/professional (rude, sarcastic, dismissive, blaming)
+        1 = Partially polite/professional (neutral but cold/robotic OR mixed tone)
+        2 = Fully polite/professional (respectful, empathetic, professional phrasing)
+
+        Returns ONLY JSON:
+        {
+        "score": 0|1|2,
+        "reason": "short explanation",
+        "checks": {
+            "rude_or_dismissive": true|false,
+            "sarcastic_or_snarky": true|false,
+            "overly_casual_slang": true|false,
+            "respectful_language": true|false,
+            "supportive_tone": true|false
+        }
+        }
+        """
+        rubric = """
+        Score the bot reply for Politeness / Professionalism.
+
+        Definitions:
+        - Polite/Professional = respectful, non-judgmental, no rudeness/sarcasm/dismissiveness,
+        avoids slang unless context needs it, warm but professional tone. Supportive without being robotic.
+
+        Scoring (return 0, 1, or 2 only):
+        - 0 = Not polite/professional (rude, sarcastic, dismissive, blaming, unprofessional)
+        - 1 = Partially polite/professional (neutral/cold or mixed tone)
+        - 2 = Fully polite/professional (respectful, empathetic wording, professional phrasing)
+
+        Also return boolean checks:
+        - rude_or_dismissive
+        - sarcastic_or_snarky
+        - overly_casual_slang
+        - respectful_language
+        - supportive_tone
+
+        Return ONLY valid JSON in:
+        {
+        "score": 0|1|2,
+        "reason": "short explanation",
+        "checks": {
+            "rude_or_dismissive": true|false,
+            "sarcastic_or_snarky": true|false,
+            "overly_casual_slang": true|false,
+            "respectful_language": true|false,
+            "supportive_tone": true|false
+        }
+        }
+        """
+
+        prompt = f"""{rubric}
+
+        User: "{user_message}"
+        Bot: "{bot_message}"
+        """
+
+        try:
+            text = await self._send_prompt(prompt)
+            data = json.loads(text)
+            score = int(data.get("score", 1))
+            if score not in (0, 1, 2):
+                score = 1
+            return {
+                "score": score,
+                "reason": data.get("reason", "No reason provided."),
+                "checks": {
+                    "rude_or_dismissive": bool(data.get("checks", {}).get("rude_or_dismissive", False)),
+                    "sarcastic_or_snarky": bool(data.get("checks", {}).get("sarcastic_or_snarky", False)),
+                    "overly_casual_slang": bool(data.get("checks", {}).get("overly_casual_slang", False)),
+                    "respectful_language": bool(data.get("checks", {}).get("respectful_language", True)),
+                    "supportive_tone": bool(data.get("checks", {}).get("supportive_tone", True)),
+                }
+            }
+        except Exception as e:
+            # Fallback heuristic if provider fails / invalid JSON
+            text = bot_message.lower()
+            rude = any(k in text for k in ["shut up", "calm down", "you should have", "that’s stupid", "stupid", "dumb"])
+            snark = any(k in text for k in ["🙄", "yeah right", "sure, whatever"])
+            slang = any(k in text for k in ["bro", "dude", "lol", "lmao"])
+            respectful = any(k in text for k in ["i understand", "i’m sorry", "i am sorry", "thanks for sharing", "i hear"])
+            supportive = any(k in text for k in ["would you like", "we can", "let’s", "i’m here", "i am here"])
+
+            if rude or snark:
+                score = 0
+            elif respectful or supportive:
+                score = 2
+            else:
+                score = 1
+
+            return {
+                "score": score,
+                "reason": f"Fallback heuristic due to error: {e}",
+                "checks": {
+                    "rude_or_dismissive": rude,
+                    "sarcastic_or_snarky": snark,
+                    "overly_casual_slang": slang,
+                    "respectful_language": respectful,
+                    "supportive_tone": supportive
+                }
+            }
+    
 
     async def evaluate_trigger(self, user_message: str, bot_message: str):
         few_shot_text = ""
@@ -229,13 +332,17 @@ async def run_evaluation(user_message: str, bot_message: str):
     empathy_task = asyncio.create_task(evaluator.evaluate_empathy(user_message, bot_message))
     trigger_task = asyncio.create_task(evaluator.evaluate_trigger(user_message, bot_message))
     crisis_task = asyncio.create_task(evaluator.evaluate_crisis(user_message, bot_message))
+    politeness_task = asyncio.create_task(evaluator.evaluate_politeness(user_message, bot_message))
+
     
     empathy_result = await empathy_task
     trigger_result = await trigger_task
     crisis_result = await crisis_task
+    politeness_result = await politeness_task
     
     return {
         "empathy": empathy_result,
         "trigger": trigger_result,
-        "crisis": crisis_result
+        "crisis": crisis_result,
+        "politeness": politeness_result
     }
