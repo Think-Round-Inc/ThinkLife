@@ -141,6 +141,15 @@ CHUNK_SIZE=300
 MAX_EMPATHY_EXAMPLES=500
 CHROMA_DB_DIR=chroma_db
 
+# Gemini Configuration (OPTIONAL)
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MAX_TOKENS=2000
+GEMINI_TEMPERATURE=0.7
+
+#web search functionality (OPTIONAL)
+TAVILY_API_KEY=your_tavily_api_key_here
+
 # Server Configuration
 PORT=8000
 DEBUG=True

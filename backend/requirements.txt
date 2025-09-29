@@ -15,3 +15,4 @@ numpy
 httpx
 langfuse
 google-generativeai
+langchain-community
