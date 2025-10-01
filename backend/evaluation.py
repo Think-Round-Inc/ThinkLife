@@ -1,9 +1,6 @@
 from brain.brain_core import ThinkxLifeBrain
 import json, asyncio, re, time, statistics
 import google.generativeai as genai
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-=======
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from langchain_chroma import Chroma
@@ -11,17 +8,6 @@ from langchain.schema import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
-from datetime import datetime
-from typing import Dict, Any, Optional, List
->>>>>>> main
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
 class TraumaAwareEvaluator:
     def __init__(self, brain_instance: ThinkxLifeBrain = None):
@@ -292,13 +278,6 @@ class ResponseLatencyEvaluator:
         return result
 
 
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-# Helper function to run all evaluations    
-async def run_evaluation(user_message: str, bot_message: str):
-=======
-=======
->>>>>>> main
 class LanguageAccessibilityEvaluator:
     """Evaluates language accessibility using LLM-as-judge"""
 
@@ -424,13 +403,6 @@ Return only JSON:
 
         return None
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< HEAD
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 class ObjectiveMetricsEvaluator:
     def __init__(self, chroma_dir: str = "CHROMA_DB_DIR", hf_model: str = "sentence-transformers/all-MiniLM-L6-v2"):
         self.hf_embeddings = HuggingFaceEmbeddings(model_name=hf_model)
@@ -454,39 +426,16 @@ class ObjectiveMetricsEvaluator:
         return {
             "relevance_score": relevance_score
         }
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> main
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
 # Global evaluator instances
 trauma_evaluator = TraumaAwareEvaluator()
 latency_evaluator = ResponseLatencyEvaluator()
 accessibility_evaluator = LanguageAccessibilityEvaluator()
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< HEAD
 objective_evaluator = ObjectiveMetricsEvaluator()
-=======
->>>>>>> main
-=======
-objective_evaluator = ObjectiveMetricsEvaluator()
->>>>>>> Stashed changes
-=======
-objective_evaluator = ObjectiveMetricsEvaluator()
->>>>>>> Stashed changes
 
 
 # Helper function to run all evaluations
 async def run_evaluation(user_message: str, bot_message: str, start_time: float = None, end_time: float = None):
-<<<<<<< HEAD
->>>>>>> Stashed changes
-=======
->>>>>>> main
     """
     Run all evaluations on a bot response.
 
@@ -500,56 +449,6 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
     - empathy assessment
     - trigger detection
     - crisis/safety evaluation
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-=======
-    - performance evaluations (latency)
-    - accessibility evaluation 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
->>>>>>> main
-=======
-    - Other Objective metrics
->>>>>>> Stashed changes
-=======
-    - Other Objective metrics
->>>>>>> Stashed changes
-    """
-    # Prepare evaluation tasks
-    evaluation_tasks = []
-
-    # Trauma-informed evaluations
-    evaluation_tasks.extend([
-        asyncio.create_task(trauma_evaluator.evaluate_empathy(user_message, bot_message)),
-        asyncio.create_task(trauma_evaluator.evaluate_trigger(user_message, bot_message)),
-        asyncio.create_task(trauma_evaluator.evaluate_crisis(user_message, bot_message))
-    ])
-
-    # Accessibility evaluation
-    evaluation_tasks.append(
-        asyncio.create_task(accessibility_evaluator.evaluate_accessibility(user_message, bot_message))
-    )
-    # Relevance evaluation
-    relevance_task = asyncio.create_task(objective_evaluator.evaluate_relevance(user_message, bot_message))
-    evaluation_tasks.append(relevance_task)
-
-    # Latency evaluation (only if timestamps provided)
-    latency_result = None
-    if start_time is not None and end_time is not None:
-        latency_result = await latency_evaluator.evaluate_latency(start_time, end_time)
-
-    # Run trauma and accessibility evaluations concurrently
-    empathy_result, trigger_result, crisis_result, accessibility_result,relevance_result = await asyncio.gather(*evaluation_tasks)
-
-    results = {
-        "empathy": empathy_result,
-        "trigger": trigger_result,
-        "crisis": crisis_result,
-        "accessibility": accessibility_result,
-        "relevance": relevance_result
-    }
-<<<<<<< HEAD
-=======
     - performance evaluations (latency)
     - accessibility evaluation 
     - Other Objective metrics
@@ -587,8 +486,6 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
         "accessibility": accessibility_result,
         "relevance": relevance_result
     }
-=======
->>>>>>> main
 
     # Add latency results if available
     if latency_result:
@@ -608,24 +505,9 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
 
     if isinstance(accessibility_result, dict) and "accessibility_score" in accessibility_result:
         quality_scores.append(accessibility_result["accessibility_score"])
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< HEAD
         
     if isinstance(relevance_result, dict) and "relevance_score" in relevance_result:
         quality_scores.append(relevance_result["relevance_score"])
-=======
->>>>>>> main
-=======
-        
-    if isinstance(relevance_result, dict) and "relevance_score" in relevance_result:
-        quality_scores.append(relevance_result["relevance_score"])
->>>>>>> Stashed changes
-=======
-        
-    if isinstance(relevance_result, dict) and "relevance_score" in relevance_result:
-        quality_scores.append(relevance_result["relevance_score"])
->>>>>>> Stashed changes
 
     if latency_result and "performance_score" in latency_result:
         quality_scores.append(latency_result["performance_score"])
@@ -637,7 +519,3 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
     results["evaluation_timestamp"] = datetime.now().isoformat()
 
     return results
-<<<<<<< HEAD
->>>>>>> Stashed changes
-=======
->>>>>>> main
