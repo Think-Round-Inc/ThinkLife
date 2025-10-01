@@ -36,8 +36,13 @@ class GeminiProvider:
         load_dotenv()  # Ensure .env is loaded for API key
         
         self.config = config
+<<<<<<< Updated upstream
         self.api_key = os.getenv("GEMINI_API_KEY")
         self.model = config.get("model", "gemini-1.5-flash")
+=======
+        self.api_key = config.get("api_key") or os.getenv("GEMINI_API_KEY")
+        self.model_name = os.getenv("GEMINI_MODEL")
+>>>>>>> Stashed changes
         self.max_tokens = config.get("max_tokens", 2000)
         self.temperature = config.get("temperature", 0.7)
         self.timeout = config.get("timeout", 30.0)
