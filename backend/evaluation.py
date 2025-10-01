@@ -11,11 +11,14 @@ from langchain.schema import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
 =======
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 >>>>>>> main
+=======
+>>>>>>> Stashed changes
 
 class TraumaAwareEvaluator:
     def __init__(self, brain_instance: ThinkxLifeBrain = None):
@@ -418,7 +421,10 @@ Return only JSON:
 
         return None
 
+<<<<<<< Updated upstream
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 class ObjectiveMetricsEvaluator:
     def __init__(self, chroma_dir: str = "CHROMA_DB_DIR", hf_model: str = "sentence-transformers/all-MiniLM-L6-v2"):
         self.hf_embeddings = HuggingFaceEmbeddings(model_name=hf_model)
@@ -442,17 +448,24 @@ class ObjectiveMetricsEvaluator:
         return {
             "relevance_score": relevance_score
         }
+<<<<<<< Updated upstream
 =======
 >>>>>>> main
+=======
+>>>>>>> Stashed changes
 
 # Global evaluator instances
 trauma_evaluator = TraumaAwareEvaluator()
 latency_evaluator = ResponseLatencyEvaluator()
 accessibility_evaluator = LanguageAccessibilityEvaluator()
+<<<<<<< Updated upstream
 <<<<<<< HEAD
 objective_evaluator = ObjectiveMetricsEvaluator()
 =======
 >>>>>>> main
+=======
+objective_evaluator = ObjectiveMetricsEvaluator()
+>>>>>>> Stashed changes
 
 
 # Helper function to run all evaluations
@@ -479,7 +492,11 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
 =======
     - performance evaluations (latency)
     - accessibility evaluation 
+<<<<<<< Updated upstream
 >>>>>>> main
+=======
+    - Other Objective metrics
+>>>>>>> Stashed changes
     """
     # Prepare evaluation tasks
     evaluation_tasks = []
@@ -495,6 +512,9 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
     evaluation_tasks.append(
         asyncio.create_task(accessibility_evaluator.evaluate_accessibility(user_message, bot_message))
     )
+    # Relevance evaluation
+    relevance_task = asyncio.create_task(objective_evaluator.evaluate_relevance(user_message, bot_message))
+    evaluation_tasks.append(relevance_task)
 
     # Latency evaluation (only if timestamps provided)
     latency_result = None
@@ -502,13 +522,14 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
         latency_result = await latency_evaluator.evaluate_latency(start_time, end_time)
 
     # Run trauma and accessibility evaluations concurrently
-    empathy_result, trigger_result, crisis_result, accessibility_result = await asyncio.gather(*evaluation_tasks)
+    empathy_result, trigger_result, crisis_result, accessibility_result,relevance_result = await asyncio.gather(*evaluation_tasks)
 
     results = {
         "empathy": empathy_result,
         "trigger": trigger_result,
         "crisis": crisis_result,
-        "accessibility": accessibility_result
+        "accessibility": accessibility_result,
+        "relevance": relevance_result
     }
 <<<<<<< HEAD
 =======
@@ -570,12 +591,18 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
 
     if isinstance(accessibility_result, dict) and "accessibility_score" in accessibility_result:
         quality_scores.append(accessibility_result["accessibility_score"])
+<<<<<<< Updated upstream
 <<<<<<< HEAD
         
     if isinstance(relevance_result, dict) and "relevance_score" in relevance_result:
         quality_scores.append(relevance_result["relevance_score"])
 =======
 >>>>>>> main
+=======
+        
+    if isinstance(relevance_result, dict) and "relevance_score" in relevance_result:
+        quality_scores.append(relevance_result["relevance_score"])
+>>>>>>> Stashed changes
 
     if latency_result and "performance_score" in latency_result:
         quality_scores.append(latency_result["performance_score"])
