@@ -96,22 +96,29 @@ class ZoeCore:
                 metadata={"application": application}
             )
             
-            # Check if message needs redirection (off-topic)
+            # Check if message needs redirection (off-topic or harmful)
             if self.personality.is_off_topic_request(message):
-                redirect_response = self.personality.get_redirect_response()
+                # Check if it's a harmful request for safety response
+                is_harmful = self.personality._is_harmful_request(message.lower())
+                redirect_response = self.personality.get_redirect_response(is_harmful=is_harmful)
                 
                 # Add assistant response to conversation history
                 self.conversation_manager.add_message(
                     session_id=session_id,
                     role="assistant",
                     content=redirect_response,
-                    metadata={"redirected": True, "application": application}
+                    metadata={
+                        "redirected": True, 
+                        "harmful_request": is_harmful,
+                        "application": application
+                    }
                 )
                 
                 return {
                     "success": True,
                     "response": redirect_response,
                     "redirected": True,
+                    "safety_response": is_harmful,
                     "session_id": session_id,
                     "timestamp": datetime.now().isoformat()
                 }

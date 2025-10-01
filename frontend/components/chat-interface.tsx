@@ -62,6 +62,7 @@ export default function ChatInterface({
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [aceScore, setAceScore] = useState<number>(0);
   const [aceAnswers, setAceAnswers] = useState<Answer[]>([]);
+  const [aceDetails, setAceDetails] = useState<string[]>([]);
 
   // Chat states
   const [messages, setMessages] = useState<Message[]>([]);
@@ -77,6 +78,16 @@ export default function ChatInterface({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+
+  // Auto-scroll to bottom when messages change or loading state changes
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'end'
+      });
+    }
+  }, [messages, isLoading]);
 
   // Age restriction handler (not used since AgeRestriction doesn't take props)
   const handleAgeRestriction = () => {
@@ -96,14 +107,21 @@ export default function ChatInterface({
   };
 
   // ACE questionnaire handler
-  const handleQuestionnaireComplete = (score: number, answers: Answer[]) => {
+  const handleQuestionnaireComplete = (score: number, answers: Answer[], details: string[]) => {
     setAceAnswers(answers);
     setAceScore(score);
+    setAceDetails(details);
     setStep("results");
   };
 
   // Results handler
   const handleStartChat = () => {
+    // Prevent chat access for high ACE scores (>= 4)
+    if (aceScore >= 4) {
+      console.warn('Chat access denied for ACE score >= 4');
+      return;
+    }
+    
     setStep("chat");
     // Clear any existing session to start fresh
     setSessionId(null);
@@ -122,12 +140,50 @@ export default function ChatInterface({
 
   const getInitialMessage = () => {
     if (aceScore <= 3) {
-      return `Hey ${userInfo?.name || 'there'}! What can we explore together today?`;
+      return `Hey ${userInfo?.name || 'there'}! I'm Zoe, an AI companion here to support you.
+
+Let me be transparent about our interaction:
+
+I am an AI assistant, not a human:
+• I cannot diagnose, treat, or provide professional therapy for mental health conditions
+
+How I can support you:
+• Provide empathetic, non-judgmental conversation and active listening
+• Share general wellness information and coping strategies
+• Offer a safe space for reflection and processing your thoughts
+
+I'm here to listen and support you. What's on your mind today?`;
     } else if (aceScore <= 6) {
-      return `Hello ${userInfo?.name || 'strong spirit'}. What would you like to talk about today?`;
+      return `Hello ${userInfo?.name || 'strong spirit'}! I'm Zoe, an AI companion here to support you.
+
+Let me be transparent about our interaction:
+
+I am an AI assistant, not a human:
+• I cannot diagnose, treat, or provide professional therapy for mental health conditions
+
+How I can support you:
+• Provide empathetic, non-judgmental conversation and active listening
+• Share general wellness information and coping strategies
+• Offer a safe space for reflection and processing your thoughts
+
+I'm here to listen and support you. What's on your mind today?`;
     } else {
-      return `Hi ${userInfo?.name || 'friend'}. I'm here to listen and support you. What's on your mind?`;
+      return `Hi ${userInfo?.name || 'friend'}!I'm Zoe, an AI companion here to support you.
+
+Let me be transparent about our interaction:
+
+I am an AI assistant, not a human:
+• I cannot diagnose, treat, or provide professional therapy for mental health conditions
+
+How I can support you:
+• Provide empathetic, non-judgmental conversation and active listening
+• Share general wellness information and coping strategies
+• Offer a safe space for reflection and processing your thoughts
+
+I'm here to listen and support you. What's on your mind today?`;
     }
+    // Since scores >= 4 can't access chat, we only need to handle scores < 4
+    return `Hey ${userInfo?.name || 'there'}! What can we explore together today?`;
   };
 
   // Expression analysis
@@ -203,6 +259,7 @@ export default function ChatInterface({
           user_id: userId,
           user_context: {
             ace_score: aceScore,
+            ace_details: aceDetails,
             age: userInfo?.age || 25,
             name: userInfo?.name || "User",
             application: variant === "healing-rooms" ? "healing-rooms" : "chatbot",
@@ -260,6 +317,7 @@ export default function ChatInterface({
           user_id: userId,
           user_context: {
             ace_score: aceScore,
+            ace_details: aceDetails,
             age: userInfo?.age || 25,
             name: userInfo?.name || "User",
             application: variant === "healing-rooms" ? "healing-rooms" : "chatbot",
@@ -269,11 +327,37 @@ export default function ChatInterface({
       });
 
       if (!response.ok) {
+        if (response.status === 403) {
+          // Handle ACE score restriction
+          const errorData = await response.json();
+          const restrictionMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            content: errorData.detail || "Chat access is restricted for your safety. Please contact info@thinkround.org to learn more about our Trauma Transformation Training program.",
+            sender: "zoe",
+            timestamp: new Date(),
+            expression: "caring"
+          };
+          setMessages(prev => [...prev, restrictionMessage]);
+          return;
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
       console.log("Backend response:", data);
+
+      // Handle ACE score restriction in legacy response format
+      if (data.restricted) {
+        const restrictionMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: data.response || "Chat access is restricted for your safety. Please contact info@thinkround.org to learn more about our Trauma Transformation Training program.",
+          sender: "zoe",
+          timestamp: new Date(),
+          expression: "caring"
+        };
+        setMessages(prev => [...prev, restrictionMessage]);
+        return;
+      }
 
       if (data.success && data.response) {
         // Capture session ID from response for conversation continuity

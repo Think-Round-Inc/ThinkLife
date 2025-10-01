@@ -70,6 +70,28 @@ class ZoePersonality:
             )
         ]
         
+        # Safety-focused redirect responses for harmful requests
+        self.safety_redirect_responses = [
+            (
+                "I care deeply about your safety and well-being. If you're having thoughts of "
+                "hurting yourself or others, please reach out to a crisis hotline immediately: "
+                "988 (Suicide & Crisis Lifeline) or contact emergency services. I'm here to "
+                "support you through difficult emotions, but I can't provide guidance on harmful actions."
+            ),
+            (
+                "Your safety is my top priority. I can't provide information that might be harmful, "
+                "but I'm absolutely here to listen if you're struggling with difficult feelings. "
+                "If you're in crisis, please contact 988 or emergency services. What's been weighing "
+                "on your heart that we could talk through together?"
+            ),
+            (
+                "I notice you might be asking about something that could be harmful. I care about "
+                "you and can't provide that kind of guidance, but I'm completely here to support you "
+                "through whatever you're feeling. If you're in immediate danger, please call 988 or "
+                "emergency services. What's really going on for you right now?"
+            )
+        ]
+        
         self.error_responses = [
             (
                 "I'm having a moment where I can't process that properly. "
@@ -111,6 +133,10 @@ class ZoePersonality:
         Returns True if the message should be redirected back to therapeutic support.
         """
         message_lower = message.lower()
+
+        # CRITICAL SAFETY: Check for harmful requests first
+        if self._is_harmful_request(message_lower):
+            return True
 
         # Keywords that indicate off-topic requests
         off_topic_patterns = [
@@ -185,8 +211,68 @@ class ZoePersonality:
 
         return False
     
-    def get_redirect_response(self) -> str:
+    def _is_harmful_request(self, message_lower: str) -> bool:
+        """
+        Critical safety check for harmful requests that should never be entertained.
+        This protects against requests for harmful advice, especially from minors.
+        """
+        # Suicide and self-harm patterns
+        suicide_patterns = [
+            r"\b(how to.*(?:kill|hurt|harm).*(?:myself|self))\b",
+            r"\b(suicide|kill myself|end.*life|hurt myself|self.*harm)\b",
+            r"\b(want to die|wish.*dead|better off dead)\b",
+            r"\b(ways to.*(?:die|suicide|kill))\b",
+            r"\b(painless.*(?:death|suicide|die))\b",
+        ]
+        
+        # Violence and harm to others
+        violence_patterns = [
+            r"\b(how to.*(?:kill|hurt|harm).*(?:someone|people|others))\b",
+            r"\b(make.*(?:bomb|weapon|poison))\b",
+            r"\b(hurt.*(?:people|someone|others))\b",
+            r"\b(revenge|get back at|make.*pay)\b",
+        ]
+        
+        # Inappropriate requests from minors
+        minor_safety_patterns = [
+            r"\b(i\'m.*(?:12|13|14|15|16|17).*(?:years old|yr old))\b",
+            r"\b(in.*(?:middle school|high school|grade))\b.*(?:how to|teach me|help me)",
+            r"\b(?:kid|child|teen|teenager).*(?:how to|ways to|help me)",
+            r"\b(my parents.*don\'t know)\b",
+            r"\b(don\'t tell.*(?:parents|adults|mom|dad))\b",
+        ]
+        
+        # Drug and substance abuse
+        substance_patterns = [
+            r"\b(how to.*(?:get|buy|make).*(?:drugs|weed|alcohol))\b",
+            r"\b(where.*(?:buy|get).*(?:drugs|pills|alcohol))\b",
+            r"\b(get high|get drunk|party drugs)\b",
+        ]
+        
+        # Illegal activities
+        illegal_patterns = [
+            r"\b(how to.*(?:steal|rob|break into))\b",
+            r"\b(illegal.*(?:ways|methods|activities))\b",
+            r"\b(break.*law|commit.*crime)\b",
+        ]
+        
+        # Check all harmful patterns
+        all_harmful_patterns = (
+            suicide_patterns + violence_patterns + minor_safety_patterns + 
+            substance_patterns + illegal_patterns
+        )
+        
+        for pattern in all_harmful_patterns:
+            if re.search(pattern, message_lower):
+                logger.warning(f"Harmful request detected and blocked: {pattern}")
+                return True
+                
+        return False
+    
+    def get_redirect_response(self, is_harmful: bool = False) -> str:
         """Get a gentle redirect response when user asks off-topic questions"""
+        if is_harmful:
+            return random.choice(self.safety_redirect_responses)
         return random.choice(self.redirect_responses)
     
     def get_error_response(self) -> str:

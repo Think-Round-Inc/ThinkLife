@@ -6,6 +6,16 @@ import { prisma } from "@/lib/prisma";
 export type UserRole = 'MEMBER' | 'INTERN' | 'TEAM_LEAD' | 'ADMIN';
 export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
 
+function isAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const raw = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || "";
+  const list = raw
+    .split(/[,\s]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return list.includes(email.toLowerCase());
+}
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -107,7 +117,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
         id: basicUser.id,
         email: basicUser.email,
         name: basicUser.name || undefined,
-        rolePrimary: rolePrimary as UserRole,
+        rolePrimary: (isAdminEmail(basicUser.email) ? 'ADMIN' : rolePrimary) as UserRole,
         status: status as UserStatus,
         teamMemberships,
         userRoles,
@@ -133,7 +143,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
             id: basicUser.id,
             email: basicUser.email,
             name: basicUser.name || undefined,
-            rolePrimary: 'ADMIN' as UserRole, // Set to ADMIN for testing
+            rolePrimary: (isAdminEmail(basicUser.email) ? 'ADMIN' : 'ADMIN') as UserRole, // default ADMIN, allow env override
             status: 'ACTIVE' as UserStatus, // Default status
             teamMemberships: [],
             userRoles: [],
@@ -149,7 +159,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
         id: user.id,
         email: user.email!,
         name: user.user_metadata?.name || user.user_metadata?.full_name || undefined,
-        rolePrimary: 'ADMIN' as UserRole, // Set to ADMIN for testing
+        rolePrimary: (isAdminEmail(user.email) ? 'ADMIN' : 'ADMIN') as UserRole, // default ADMIN, allow env override
         status: 'ACTIVE' as UserStatus,
         teamMemberships: [],
         userRoles: [],

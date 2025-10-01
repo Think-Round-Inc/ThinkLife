@@ -127,11 +127,28 @@ touch .env
 
 Add the following content to `backend/.env`:
 ```env
-# OpenAI Configuration
+# OpenAI Configuration (REQUIRED)
 OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_MAX_TOKENS=2000
+OPENAI_TEMPERATURE=0.7
 
-# Database Configuration (if using external database)
-DATABASE_URL=your_database_url_here
+# Vector Database Configuration (OPTIONAL)
+CONTEXT_TXT_PATH=data/context.txt
+KNOWLEDGE_JSON_PATH=data/knowledge_base.json
+EMPATHY_CSV_PATH=data/empathetic_dialogues_train.csv
+CHUNK_SIZE=300
+MAX_EMPATHY_EXAMPLES=500
+CHROMA_DB_DIR=chroma_db
+
+# Gemini Configuration (OPTIONAL)
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MAX_TOKENS=2000
+GEMINI_TEMPERATURE=0.7
+
+#web search functionality (OPTIONAL)
+TAVILY_API_KEY=your_tavily_api_key_here
 
 # Server Configuration
 PORT=8000
@@ -167,26 +184,32 @@ touch .env.local
 
 Add the following content to `frontend/.env.local`:
 ```env
-# Next.js Configuration
+# Next.js Configuration (REQUIRED)
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=your_nextauth_secret_here_minimum_32_characters_long
 
-# Database Configuration
-DATABASE_URL="your_database_connection_string_here"
+# Database Configuration (OPTIONAL - for user management features)
+DATABASE_URL="postgresql://username:password@localhost:5432/thinkxlife"
+SHADOW_DATABASE_URL="postgresql://username:password@localhost:5432/thinkxlife_shadow"
 
-# External API Endpoints
+# External API Endpoints (REQUIRED)
 NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-# Authentication Providers (if using, currently not)
+# Supabase Configuration (REQUIRED for authentication)
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url_here
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+
+# Admin Configuration (OPTIONAL)
+ADMIN_EMAILS=admin@example.com,admin2@example.com
+NEXT_PUBLIC_ADMIN_EMAILS=admin@example.com,admin2@example.com
+
+# Email Configuration (OPTIONAL - for password reset)
+RESEND_API_KEY=your_resend_api_key_here
+
+# Google OAuth Configuration (OPTIONAL)
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
-
-# Email Configuration (if using, currently not)
-EMAIL_SERVER_HOST=smtp.example.com
-EMAIL_SERVER_PORT=587
-EMAIL_SERVER_USER=your_email@example.com
-EMAIL_SERVER_PASSWORD=your_email_password
-EMAIL_FROM=noreply@yourapp.com
 
 ```
 

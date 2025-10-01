@@ -1,38 +1,75 @@
-# ThinkxLife — Inside our AI & Zoe Avatar
+# ThinkxLife
 
-**A transparent demonstration of how Think Round integrates AI technology to enhance our programs and services.**
+**A comprehensive platform showcasing Think Round's AI integration across healing rooms, exterior spaces and related projects.**
 
 ---
 
-## **Our Intention**
+## **Platform Overview**
 
-ThinkxLife serves as a **transparent window** into how Think Round leverages artificial intelligence to enhance our mission of healing and transformation. Rather than hiding our AI capabilities, we openly demonstrate how technology can be **thoughtfully integrated** to amplify human connection, support trauma-informed care, and create more meaningful experiences across our programs.
+ThinkxLife serves as a **transparent demonstration** of how Think Round integrates artificial intelligence to enhance our mission of healing and transformation. The platform consists of three main experience areas:
+
+### **Inside Our AI**
+Explore how we thoughtfully integrate AI technology across our programs, featuring trauma-informed design principles, ethical AI implementation, and transparent technology practices.
+
+### **Healing Rooms** 
+Experience trauma-informed AI support through our empathetic companion Zoe, designed with ACE assessment integration, crisis detection, and personalized healing journeys.
+
+### **Exterior Spaces**
+Discover space that preserve human creativity while leveraging technology for accessibility and connection.
 
 **We believe in AI transparency** — showing, not just telling, how technology can serve humanity with purpose and heart.
 
 ---
 
-## **Meet Zoe: Our AI Avatar Companion**
+## **Meet Zoe: Our AI Companion**
 
-**Zoe** is our trauma-informed AI companion who demonstrates the caring, supportive interaction possible when AI is designed with **human-centered values**. Through Zoe, we showcase:
+### **Definition & Purpose**
+**Zoe** is Think Round's trauma-informed AI companion, designed to provide empathetic support while demonstrating responsible AI integration in healing contexts. Named to represent life and growth, Zoe serves as both a supportive companion and a transparent example of how AI can be thoughtfully designed to serve human wellbeing.
 
-### **Interactive Avatar Experience**
-- **Realistic Avatar**: Dynamic facial expressions and mouth movements
-- **Professional Voice**: High-quality AI-generated speech (OpenAI TTS)
-- **Emotional Intelligence**: Responses adapted based on user context and ACE scores
-- **Visual Feedback**: Real-time animations and audio visualizations during conversation
+### **Response Generation Logic**
+Zoe's responses are generated through a sophisticated multi-layered system:
 
-### **Trauma-Informed Design**
-- **ACE Assessment Integration**: Personalized responses based on Adverse Childhood Experiences
-- **Age-Appropriate Interactions**: Content filtering based on user age
-- **Safe Space Creation**: Carefully crafted dialogue promoting emotional safety
-- **Crisis Awareness**: Built-in resources and appropriate response protocols
+#### **1. Trauma-Informed Processing**
+- **ACE Assessment Integration**: Responses are personalized based on Adverse Childhood Experiences (ACE) questionnaire results
+- **Trauma Category Recognition**: System identifies specific trauma areas (emotional abuse, physical neglect, family dysfunction, etc.) for sensitive contextualization
+- **Safety-First Language**: All responses are filtered through trauma-safe language patterns to avoid triggering content
 
-### **Advanced AI Architecture**
-- **Multi-Provider Backend**: OpenAI integration with fallback systems
-- **Context-Aware Processing**: Remembers conversation context and user preferences
-- **Real-Time Speech Generation**: Instant text-to-speech conversion
-- **Scalable Infrastructure**: FastAPI backend with React frontend
+#### **2. Multi-Provider AI Architecture**
+- **Primary Provider**: OpenAI GPT-4o-mini for natural language processing
+- **Fallback Systems**: Redundant providers ensure consistent availability
+- **Context Management**: Conversation history and user context are maintained across sessions
+- **Real-time Processing**: FastAPI backend ensures low-latency response generation
+
+#### **3. Personality & Safety Filters**
+- **Empathetic Tone**: Responses emphasize validation, hope, and strength-based messaging
+- **Off-Topic Detection**: Advanced pattern matching redirects harmful or inappropriate requests
+- **Crisis Recognition**: Built-in detection for self-harm, violence, or substance abuse requests with immediate safety responses
+- **Minor Protection**: Special safeguards prevent harmful advice to underage users
+
+### **Core Capabilities**
+
+#### **Trauma-Informed Support**
+- **ACE Score-Based Routing**: Users with scores ≥4 are directed to professional support, scores <4 can choose chat or training
+- **Personalized Empathy**: Responses tailored to specific trauma experiences without re-traumatization
+- **Professional Boundaries**: Clear guidance about limitations and when to seek professional help
+
+#### **Advanced Interaction Features**
+- **Avatar Mode**: Dynamic facial expressions and mouth movements with professional voice synthesis
+- **Context Memory**: Maintains conversation history and user preferences across sessions
+- **Real-Time Processing**: Instant response generation with smooth conversation flow
+- **Multi-Modal Communication**: Text and voice interaction options
+
+#### **Safety & Security**
+- **Harmful Content Prevention**: Comprehensive filtering for suicide, violence, substance abuse, and illegal activity requests
+- **Minor Protection**: Special detection patterns for underage users with appropriate safeguards
+- **Privacy Protection**: Secure handling of sensitive personal information
+- **Transparent Operations**: Open demonstration of AI decision-making processes
+
+#### **Technical Architecture**
+- **Scalable Backend**: FastAPI with Python for high-performance processing
+- **Modern Frontend**: Next.js 15 with TypeScript and Framer Motion animations
+- **Database Integration**: PostgreSQL with Prisma ORM for user management
+- **Authentication**: Supabase integration with NextAuth for secure access
 
 ---
 
@@ -64,33 +101,7 @@ ThinkxLife demonstrates the potential for thoughtful AI integration across thera
 
 ---
 
-## **Getting Started**
-
-### **Prerequisites**
-- Node.js 18+ 
-- Python 3.9+
-- OpenAI API
-
-### **Quick Start**
-```bash
-# Clone the repository
-git clone https://github.com/Think-Round-Inc/ThinkxLife.git
-cd ThinkxLife
-
-# Setup Backend
-cd backend
-pip install -r requirements.txt
-export OPENAI_API_KEY="your-api-key-here"
-python3 main.py
-
-# Setup Frontend (new terminal)
-cd frontend
-npm install
-npm run dev
-
-# Visit http://localhost:3000
-```
----
+*For detailed setup instructions, see [LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)*
 
 ## **Our AI Philosophy**
 

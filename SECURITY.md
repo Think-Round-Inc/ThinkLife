@@ -9,7 +9,7 @@ ThinkxLife is committed to the security and privacy of its users.  This document
 | Branch / Version | Supported?      | Notes                          |
 |------------------|-----------------|--------------------------------|
 | `main`           | Yes (latest)    | All new fixes land here first  |
-| `Varma`          | Yes             | Mirrors `main` via CI/CD       |
+| `Collborator`          | Yes             | Mirrors `main` via CI/CD       |
 
 We aim to provide security fixes for all supported branches.  Please report any issues you find against the branch you’re using.
 
@@ -27,7 +27,7 @@ If you discover a security issue, please use **one** of the methods below:
 GitHub will keep your report private until a fix is ready for public disclosure.
 
 ### 2. Email
-Send an encrypted or plain-text email to: jagadeshvarma07@gmail.com
+Send an encrypted or plain-text email to: info@thinkround.org
 
 
 Subject line: `Security vulnerability in ThinkxLife`
@@ -58,6 +58,7 @@ We will keep you updated at each stage.  Thank you for helping us keep ThinkxLif
 
 - **Heidi Hardin** (Founder, Think Round, Inc)
 - **Jagadesh Varma Nadimpalli** (Founding AI Engineer Intern)
+- **Generative AI Engineers**
 
 
 For general support or non-security issues, please open a regular issue in the repo.

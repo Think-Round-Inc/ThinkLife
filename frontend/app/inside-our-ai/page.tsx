@@ -100,7 +100,7 @@ export default function AIAwarenessPage() {
       ],
       cta: {
         label: "Experience Zoe →",
-        destination: "/chatbot",
+        destination: "/chat",
       },
     },
     {
@@ -273,7 +273,7 @@ export default function AIAwarenessPage() {
               >
                 Explore Our AI Applications
               </motion.button>
-              <Link href="/chatbot">
+              <Link href="/chat">
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -444,78 +444,6 @@ export default function AIAwarenessPage() {
               </motion.div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* Interactive Preview Section */}
-      <section className="py-20">
-        <div className="container mx-auto px-6">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-            variants={staggerContainer}
-            className="text-center mb-16"
-          >
-            <motion.h2
-              variants={fadeInUp}
-              className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4"
-            >
-              Meet Zoe - Our AI Companion
-            </motion.h2>
-            <motion.p
-              variants={fadeInUp}
-              className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto"
-            >
-              Experience how our AI companion Zoe enhances healing journeys and supports our community programs
-            </motion.p>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.8 }}
-            className="max-w-2xl mx-auto"
-          >
-            <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-2xl p-8 shadow-xl">
-              <div className="space-y-4">
-                <div className="flex items-start space-x-3">
-                  <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                    A
-                  </div>
-                  <div className="bg-white dark:bg-gray-700 rounded-lg p-3 flex-1">
-                    <p className="text-gray-900 dark:text-white">
-                      Hello! I'm Zoe, Think Round's AI companion. I'm designed to support healing journeys, 
-                      enhance creative experiences, and assist with our community programs while maintaining 
-                      our trauma-informed, culturally sensitive approach.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3 justify-end">
-                  <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg p-3 max-w-xs">
-                    <p className="text-white">
-                      I'm interested in how Think Round uses AI to enhance their healing rooms and arts programs.
-                    </p>
-                  </div>
-                  <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                    U
-                  </div>
-                </div>
-              </div>
-              <div className="mt-6 relative">
-                <motion.button
-                  className="w-full bg-gray-400 text-gray-600 font-semibold py-3 px-6 rounded-lg cursor-not-allowed shadow-lg relative"
-                  disabled
-                >
-                  Experience Zoe
-                  <span className="absolute -top-2 -right-2 text-xs bg-gray-600 text-white px-2 py-1 rounded-full">
-                    Coming Soon
-                  </span>
-                </motion.button>
-              </div>
-            </div>
-          </motion.div>
         </div>
       </section>
 

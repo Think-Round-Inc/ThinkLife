@@ -40,17 +40,29 @@ class OpenAIProvider:
         self.enabled = config.get("enabled", False)
         self.organization = config.get("organization")
         
+        # Check if API key is available from environment if not in config
         if not self.api_key:
-            raise ValueError("OpenAI API key is required")
+            import os
+            self.api_key = os.getenv("OPENAI_API_KEY")
+        
+        if not self.api_key:
+            logger.warning("OpenAI API key not found - provider will be disabled")
+            self.enabled = False
+            self.client = None
+            return
         
         # Initialize OpenAI client
-        self.client = openai.AsyncOpenAI(
-            api_key=self.api_key,
-            organization=self.organization,
-            timeout=self.timeout
-        )
-        
-        logger.info(f"OpenAI provider initialized with model: {self.model}")
+        try:
+            self.client = openai.AsyncOpenAI(
+                api_key=self.api_key,
+                organization=self.organization,
+                timeout=self.timeout
+            )
+            logger.info(f"OpenAI provider initialized with model: {self.model}")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+            self.enabled = False
+            self.client = None
     
     async def process_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -65,10 +77,10 @@ class OpenAIProvider:
         start_time = time.time()
         
         try:
-            if not self.enabled:
+            if not self.enabled or not self.client:
                 return {
                     "success": False,
-                    "error": "OpenAI provider is disabled",
+                    "error": "OpenAI provider is disabled or not configured",
                     "timestamp": datetime.now().isoformat()
                 }
             
@@ -166,10 +178,10 @@ class OpenAIProvider:
         """Check the health of the OpenAI provider"""
         
         try:
-            if not self.enabled:
+            if not self.enabled or not self.client:
                 return {
                     "status": "disabled",
-                    "message": "OpenAI provider is disabled"
+                    "message": "OpenAI provider is disabled or not configured"
                 }
             
             # Test API connectivity

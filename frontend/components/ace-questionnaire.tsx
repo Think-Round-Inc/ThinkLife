@@ -6,7 +6,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Brain, Sparkles, CheckCircle, XCircle, SkipForward } from "lucide-react";
+import { Brain, Sparkles, CheckCircle, XCircle } from "lucide-react";
 
 const ACE_QUESTIONS = [
   "Before 18 years old, Did a parent or other adult in the household often swear at you, insult you, put you down, or humiliate you?",
@@ -21,10 +21,10 @@ const ACE_QUESTIONS = [
   "Before 18 years old, Did a household member go to jail or prison?",
 ];
 
-type Answer = "yes" | "no" | "skip" | null;
+type Answer = "yes" | "no" | null;
 
 type AceQuestionnaireProps = {
-  onComplete: (score: number, answers: Answer[]) => void;
+  onComplete: (score: number, answers: Answer[], aceDetails: string[]) => void;
   userName: string;
 };
 
@@ -51,9 +51,10 @@ export default function AceQuestionnaire({
       setCurrentQuestion(currentQuestion + 1);
       setCurrentAnswer(null);
     } else {
-      // Calculate score
+      // Calculate score and extract ACE details
       const score = calculateAceScore(newAnswers);
-      onComplete(score, newAnswers);
+      const aceDetails = getAceDetails(newAnswers);
+      onComplete(score, newAnswers, aceDetails);
     }
   }, [currentAnswer, answers, currentQuestion, onComplete]);
 
@@ -73,9 +74,18 @@ export default function AceQuestionnaire({
   const calculateAceScore = (answers: Answer[]): number => {
     return answers.reduce((score, answer) => {
       if (answer === "yes") return score + 1;
-      if (answer === "skip") return score + 0.25;
       return score;
     }, 0);
+  };
+
+  const getAceDetails = (answers: Answer[]): string[] => {
+    const details: string[] = [];
+    answers.forEach((answer, index) => {
+      if (answer === "yes") {
+        details.push(ACE_QUESTIONS[index]);
+      }
+    });
+    return details;
   };
 
   const progress = ((currentQuestion + 1) / ACE_QUESTIONS.length) * 100;
@@ -130,33 +140,23 @@ export default function AceQuestionnaire({
             className="space-y-3"
             disabled={isTransitioning}
           >
-            <div className={`flex items-center space-x-3 p-3 rounded-xl border-2 transition-all duration-300 cursor-pointer hover:bg-green-50 ${
-              currentAnswer === "yes" ? "border-green-500 bg-green-50" : "border-slate-200 hover:border-green-300"
+            <div className={`flex items-center space-x-3 p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer hover:bg-green-50 hover:shadow-md transform hover:scale-[1.02] ${
+              currentAnswer === "yes" ? "border-green-500 bg-green-50 shadow-md scale-[1.02]" : "border-slate-200 hover:border-green-300"
             }`}>
               <RadioGroupItem value="yes" id="yes" className="text-green-600" />
-              <Label htmlFor="yes" className="flex items-center gap-2 cursor-pointer flex-1">
+              <Label htmlFor="yes" className="flex items-center gap-2 cursor-pointer flex-1 font-medium">
                 <CheckCircle className="w-4 h-4 text-green-600" />
                 Yes
               </Label>
             </div>
 
-            <div className={`flex items-center space-x-3 p-3 rounded-xl border-2 transition-all duration-300 cursor-pointer hover:bg-blue-50 ${
-              currentAnswer === "no" ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:border-blue-300"
+            <div className={`flex items-center space-x-3 p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer hover:bg-blue-50 hover:shadow-md transform hover:scale-[1.02] ${
+              currentAnswer === "no" ? "border-blue-500 bg-blue-50 shadow-md scale-[1.02]" : "border-slate-200 hover:border-blue-300"
             }`}>
               <RadioGroupItem value="no" id="no" className="text-blue-600" />
-              <Label htmlFor="no" className="flex items-center gap-2 cursor-pointer flex-1">
+              <Label htmlFor="no" className="flex items-center gap-2 cursor-pointer flex-1 font-medium">
                 <XCircle className="w-4 h-4 text-blue-600" />
                 No
-              </Label>
-            </div>
-
-            <div className={`flex items-center space-x-3 p-3 rounded-xl border-2 transition-all duration-300 cursor-pointer hover:bg-amber-50 ${
-              currentAnswer === "skip" ? "border-amber-500 bg-amber-50" : "border-slate-200 hover:border-amber-300"
-            }`}>
-              <RadioGroupItem value="skip" id="skip" className="text-amber-600" />
-              <Label htmlFor="skip" className="flex items-center gap-2 cursor-pointer flex-1">
-                <SkipForward className="w-4 h-4 text-amber-600" />
-                Prefer not to answer
               </Label>
             </div>
           </RadioGroup>
