@@ -43,6 +43,7 @@ class GeminiProvider:
 =======
         self.api_key = config.get("api_key") or os.getenv("GEMINI_API_KEY")
         self.model_name = os.getenv("GEMINI_MODEL")
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
 =======
         self.api_key = config.get("api_key") or os.getenv("GEMINI_API_KEY")
@@ -51,6 +52,8 @@ class GeminiProvider:
 >>>>>>> main
 =======
         self.model_name = os.getenv("GEMINI_MODEL")
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         self.max_tokens = config.get("max_tokens", 2000)
         self.temperature = config.get("temperature", 0.7)

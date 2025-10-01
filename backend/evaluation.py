@@ -12,11 +12,14 @@ from langchain_huggingface import HuggingFaceEmbeddings
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
 =======
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 >>>>>>> main
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 
@@ -422,7 +425,10 @@ Return only JSON:
         return None
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 <<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 class ObjectiveMetricsEvaluator:
@@ -449,8 +455,11 @@ class ObjectiveMetricsEvaluator:
             "relevance_score": relevance_score
         }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 >>>>>>> main
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 
@@ -459,10 +468,14 @@ trauma_evaluator = TraumaAwareEvaluator()
 latency_evaluator = ResponseLatencyEvaluator()
 accessibility_evaluator = LanguageAccessibilityEvaluator()
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 <<<<<<< HEAD
 objective_evaluator = ObjectiveMetricsEvaluator()
 =======
 >>>>>>> main
+=======
+objective_evaluator = ObjectiveMetricsEvaluator()
+>>>>>>> Stashed changes
 =======
 objective_evaluator = ObjectiveMetricsEvaluator()
 >>>>>>> Stashed changes
@@ -493,7 +506,11 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
     - performance evaluations (latency)
     - accessibility evaluation 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 >>>>>>> main
+=======
+    - Other Objective metrics
+>>>>>>> Stashed changes
 =======
     - Other Objective metrics
 >>>>>>> Stashed changes
@@ -592,12 +609,18 @@ async def run_evaluation(user_message: str, bot_message: str, start_time: float 
     if isinstance(accessibility_result, dict) and "accessibility_score" in accessibility_result:
         quality_scores.append(accessibility_result["accessibility_score"])
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 <<<<<<< HEAD
         
     if isinstance(relevance_result, dict) and "relevance_score" in relevance_result:
         quality_scores.append(relevance_result["relevance_score"])
 =======
 >>>>>>> main
+=======
+        
+    if isinstance(relevance_result, dict) and "relevance_score" in relevance_result:
+        quality_scores.append(relevance_result["relevance_score"])
+>>>>>>> Stashed changes
 =======
         
     if isinstance(relevance_result, dict) and "relevance_score" in relevance_result:
