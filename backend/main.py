@@ -7,8 +7,6 @@ system with existing chatbot functionality.
 
 import logging
 import os
-import json
-import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, Any, Optional, List
@@ -325,7 +323,6 @@ async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeCore = Depends(get_
 
         with langfuse.start_as_current_span(name="zoe-chat-interaction") as root_span:
             # Run the main processing inside the span for better tracing
-            start_time = time.time()
             response = await zoe.process_message(
                 message=message,
                 user_context=user_context,
@@ -333,8 +330,7 @@ async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeCore = Depends(get_
                 session_id=session_id,
                 user_id=user_id,
             )
-            end_time = time.time()
-            
+
             # Update trace attributes
             root_span.update_trace(
                 session_id=session_id,
@@ -342,28 +338,25 @@ async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeCore = Depends(get_
                 output={"bot_response": response.get("response", "")},
                 metadata={"user_id": user_id},
             )
-            
+
             # Fetch trace_id and run evaluator inside the active context
             trace_id = langfuse.get_current_trace_id()
             if trace_id:
                 eval_results = {}
                 user_input = message
                 bot_message = response.get("response", "")
-            
-                eval_results = await run_evaluation(user_input, bot_message,start_time,end_time)
-            
+
+                eval_results = await run_evaluation(user_input, bot_message)
+
                 # Optionally log the evaluator results into the same span
                 root_span.update_trace(metadata={"evaluation_results": eval_results})
 
         return response
-                
-                
+
     except Exception as e:
-        logger.exception(f"Zoe chat endpoint failed: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-        
-   
-  
+        logger.error(f"Error in Zoe chat endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/zoe/sessions/{user_id}")
 async def get_zoe_user_sessions(
