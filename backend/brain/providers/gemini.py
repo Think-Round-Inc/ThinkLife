@@ -37,7 +37,7 @@ class GeminiProvider:
         
         self.config = config
         self.api_key = config.get("api_key") or os.getenv("GEMINI_API_KEY")
-        self.model_name = config.get("model", "gemini-1.5-flash")
+        self.model_name = os.getenv("GEMINI_MODEL")
         self.max_tokens = config.get("max_tokens", 2000)
         self.temperature = config.get("temperature", 0.7)
         self.timeout = config.get("timeout", 30.0)
