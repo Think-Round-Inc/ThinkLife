@@ -100,8 +100,10 @@ ThinkxLife demonstrates the potential for thoughtful AI integration across thera
 - **Emotion Recognition** for appropriate response selection
 
 ---
+## More Information:
 
-*For detailed setup instructions, see [LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)*
+**For detailed setup instructions, see [LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)**
+---
 
 ## **Our AI Philosophy**
 
