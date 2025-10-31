@@ -13,9 +13,3 @@ anthropic
 pandas
 numpy
 httpx
-langfuse
-google-generativeai
-langchain-community
-scikit-learn
-langchain-huggingface
-

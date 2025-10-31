@@ -139,49 +139,6 @@ export default function ChatInterface({
   };
 
   const getInitialMessage = () => {
-    if (aceScore <= 3) {
-      return `Hey ${userInfo?.name || 'there'}! I'm Zoe, an AI companion here to support you.
-
-Let me be transparent about our interaction:
-
-I am an AI assistant, not a human:
-• I cannot diagnose, treat, or provide professional therapy for mental health conditions
-
-How I can support you:
-• Provide empathetic, non-judgmental conversation and active listening
-• Share general wellness information and coping strategies
-• Offer a safe space for reflection and processing your thoughts
-
-I'm here to listen and support you. What's on your mind today?`;
-    } else if (aceScore <= 6) {
-      return `Hello ${userInfo?.name || 'strong spirit'}! I'm Zoe, an AI companion here to support you.
-
-Let me be transparent about our interaction:
-
-I am an AI assistant, not a human:
-• I cannot diagnose, treat, or provide professional therapy for mental health conditions
-
-How I can support you:
-• Provide empathetic, non-judgmental conversation and active listening
-• Share general wellness information and coping strategies
-• Offer a safe space for reflection and processing your thoughts
-
-I'm here to listen and support you. What's on your mind today?`;
-    } else {
-      return `Hi ${userInfo?.name || 'friend'}!I'm Zoe, an AI companion here to support you.
-
-Let me be transparent about our interaction:
-
-I am an AI assistant, not a human:
-• I cannot diagnose, treat, or provide professional therapy for mental health conditions
-
-How I can support you:
-• Provide empathetic, non-judgmental conversation and active listening
-• Share general wellness information and coping strategies
-• Offer a safe space for reflection and processing your thoughts
-
-I'm here to listen and support you. What's on your mind today?`;
-    }
     // Since scores >= 4 can't access chat, we only need to handle scores < 4
     return `Hey ${userInfo?.name || 'there'}! What can we explore together today?`;
   };
