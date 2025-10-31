@@ -113,7 +113,7 @@ class StoryTeller:
         messages = [
             SystemMessage(content=prompts.STORYTELLER_PROMPT_ADULTS),
             HumanMessage(
-                content=f"{state.get("task", "")} \n\n Here are the search results: \n\n {state.get('retrieved_content')}\n\n Here are the conversation history: \n\n {state.get('history')}"
+                content=f"{state.get('task', '')} \n\n Here are the search results: \n\n {state.get('retrieved_content')}\n\n Here are the conversation history: \n\n {state.get('history')}"
             ),
         ]
 
@@ -129,7 +129,7 @@ class StoryTeller:
         messages = [
             SystemMessage(content=prompts.STORYTELLER_PROMPT_KIDS),
             HumanMessage(
-                content=f"{state.get("task", "")} \n\n Here are the search results: \n\n {state.get('retrieved_content')}\n\n here are the conversation history: \n\n {state.get('history')}"
+                content=f"{state.get('task', '')} \n\n Here are the search results: \n\n {state.get('retrieved_content')}\n\n here are the conversation history: \n\n {state.get('history')}"
             ),
         ]
 
@@ -169,7 +169,7 @@ class Chatbot:
             messages = [
                 SystemMessage(content=prompts.ROUTER_PROMPT),
                 HumanMessage(
-                    content=f"{state.get("task", "")} \n\n Retrieved content: \n\n {state.get('retrieved_content', '')}"
+                    content=f"{state.get('task', '')} \n\n Retrieved content: \n\n {state.get('retrieved_content', '')}"
                 ),
             ]
 

@@ -1,5 +1,6 @@
 """
-ThinkxLife Brain Core - Central AI orchestration system
+ThinkxLife Brain Core - Generalized AI orchestration system with plugin architecture
+Main Brain system with backward compatibility for existing integrations
 """
 
 import asyncio
@@ -8,893 +9,626 @@ import os
 import time
 import uuid
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from dotenv import load_dotenv
+
+from .interfaces import BrainRequest, BrainResponse, IAgent
+from .types import (
+    BrainConfig, BrainAnalytics, PluginInfo, WorkflowExecution, 
+    DataSourceInfo, ApplicationType, PluginStatus, WorkflowType,
+    AgentExecutionSpec, DataSourceSpec, ProviderSpec, ToolSpec, ProcessingSpec,
+    DataSourceType
+)
+from .spec_validator import SpecificationValidator, get_spec_validator
+from .workflow_engine import WorkflowEngine, get_workflow_engine, OrchestrationResult
+from .data_sources import DataSourceManager, get_data_source_manager
+from .security_manager import SecurityManager
+from .providers import create_provider, get_available_providers
 
 # Load environment variables
 load_dotenv()
-
-# Types are used in other modules but not directly in brain_core
-# Providers are imported dynamically in _initialize_providers()
-
-# RAG imports
-try:
-    from langchain_chroma import Chroma
-    from langchain_openai import OpenAIEmbeddings
-    from langchain.schema import Document
-
-    RAG_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"RAG dependencies not available: {e}")
-    Chroma = None
-    OpenAIEmbeddings = None
-    Document = None
-    RAG_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 
 class ThinkxLifeBrain:
     """
-    Central AI Brain that orchestrates all AI operations across ThinkxLife platform.
-
-    This class manages:
-    - OpenAI provider integration
-    - Application-specific routing and context
-    - Security and rate limiting
-    - Health monitoring
+    ThinkxLife AI Brain that orchestrates agents through a plugin architecture
+    
+    Key Features:
+    - Plugin-based agent system with automatic discovery
+    - LangGraph workflow engine for standardized execution
+    - Real-time analytics and monitoring
     """
-
+    
     _instance = None
     _initialized = False
-
+    
     def __new__(cls, config=None):
         """Singleton pattern implementation"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-
-    def __init__(self, config=None):
-        """Initialize the Brain with configuration"""
+    
+    def __init__(self, config: Optional[Union[BrainConfig, Dict[str, Any]]] = None):
+        """Initialize the ThinkxLife Brain with plugin-based architecture"""
         if self._initialized:
             return
+        
 
-        self.config = self._get_default_config()
-        self.providers = {}
-
-        # Analytics
-        self.analytics = {
-            "total_requests": 0,
-            "success_rate": 0.0,
-            "average_response_time": 0.0,
-            "provider_usage": {},
-            "application_usage": {},
-            "error_rate": 0.0,
-            "uptime": 0.0,
-            "rag_usage": {
-                "queries": 0,
-                "successful_retrievals": 0,
-                "average_documents_retrieved": 0.0,
-            },
-        }
+        # Core components
+        self.spec_validator: Optional[SpecificationValidator] = None
+        self.workflow_engine: Optional[WorkflowEngine] = None
+        self.data_source_manager: Optional[DataSourceManager] = None
+        self.security_manager: SecurityManager = SecurityManager(self.config.security)
+        
+        # Analytics and monitoring
+        self.analytics = BrainAnalytics()
         self.start_time = datetime.now()
+        self.active_executions: Dict[str, WorkflowExecution] = {}
+        
+        # Plugin system is the only supported method
+        logger.info("ThinkxLife Brain initialized")
 
-        # Initialize RAG vectorstore
-        self.vectorstore = None
-        self.embeddings = None
-        self._initialize_rag()
-
-        # Initialize providers
-        self._initialize_providers()
-
-        self._initialized = True
-        logger.info("ThinkxLife Brain initialized successfully")
-
-    def _get_default_config(self):
-        """Get default Brain configuration"""
-        return {
-            "providers": {
-                "openai": {
-                    "enabled": True,
-                    "model": "gpt-4o-mini",
-                    "max_tokens": 2000,
-                    "temperature": 0.7,
-                },
-                "gemini": {
-                    "enabled": True,
-                    "model": "gemini-1.5-flash",
-                    "max_tokens": 2000,
-                    "temperature": 0.7,
-                },
-            },
-            "security": {
-                "rate_limiting": {
-                    "enabled": True,
-                    "max_requests_per_minute": 60,
-                    "max_requests_per_hour": 1000,
-                },
-                "content_filtering": {"enabled": True, "trauma_safe_mode": True},
-                "user_validation": {"require_auth": True, "allow_anonymous": False},
-            },
-            "context": {
-                "max_history_length": 20,
-                "context_retention_hours": 24,
-                "enable_personalization": True,
-            },
-            "session": {
-                "timeout_minutes": 30,
-                "max_concurrent_sessions": 5,
-                "enable_session_analytics": True,
-            },
-        }
-
-    def _initialize_rag(self):
-        """Initialize RAG vectorstore for enhanced context retrieval"""
-        if not RAG_AVAILABLE:
-            logger.warning("RAG not available - missing dependencies")
+    
+    async def initialize(self) -> None:
+        """Initialize all Brain components"""
+        if self._initialized:
             return
-
+        
+        logger.info("Initializing ThinkxLife Brain components...")
+        
         try:
-            chroma_db_dir = os.getenv("CHROMA_DB_DIR", "chroma_db")
-
-            # Check if ChromaDB exists
-            if not os.path.exists(chroma_db_dir):
-                logger.warning(
-                    f"ChromaDB not found at {chroma_db_dir}. Run build_index.py first."
-                )
-                return
-
-            # Initialize embeddings - try OpenAI first, then alternatives
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            if not openai_api_key:
-                logger.warning("OPENAI_API_KEY not found - RAG will be disabled")
-                logger.info(
-                    "To enable RAG functionality, configure OPENAI_API_KEY in your environment"
-                )
-                return
-
-            self.embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
-
-            # Load existing Chroma vectorstore
-            self.vectorstore = Chroma(
-                persist_directory=chroma_db_dir, embedding_function=self.embeddings
-            )
-
-            logger.info(f"RAG vectorstore initialized from {chroma_db_dir}")
-
+            # Initialize specification validator
+            self.spec_validator = get_spec_validator()
+            await self.spec_validator.initialize(self.config.__dict__ if hasattr(self.config, '__dict__') else {})
+            
+            # Initialize workflow engine (LangGraph-based orchestration)
+            self.workflow_engine = get_workflow_engine()
+            await self.workflow_engine.initialize()
+            
+            # Initialize data source manager
+            self.data_source_manager = get_data_source_manager()
+            await self.data_source_manager.initialize(vectorstore)
+            
+            self._initialized = True
+            
+            logger.info("ThinkxLife Brain initialized successfully")
+            
         except Exception as e:
-            logger.warning(f"Failed to initialize RAG vectorstore: {str(e)}")
-            logger.info(
-                "RAG functionality will be disabled - responses will use base knowledge only"
-            )
-            self.vectorstore = None
-
-    def _initialize_providers(self):
-        """Initialize AI providers based on configuration"""
-        provider_configs = self.config["providers"]
-        logger.info(f"Available provider configs: {provider_configs.keys()}")
-
-        # OpenAI
-        if provider_configs.get("openai", {}).get("enabled", False):
-            try:
-                from .providers.openai import OpenAIProvider
-
-                openai_provider = OpenAIProvider(provider_configs["openai"])
-                if openai_provider.enabled:
-                    self.providers["openai"] = openai_provider
-                    logger.info("OpenAI provider initialized successfully")
-                else:
-                    logger.warning(
-                        "OpenAI provider disabled due to missing configuration"
-                    )
-            except Exception as e:
-                logger.warning(f"OpenAI provider initialization failed: {str(e)}")
-
-        # Gemini
-        if provider_configs.get("gemini", {}).get("enabled", False):
-            try:
-                from .providers.gemini import GeminiProvider
-
-                gemini_provider = GeminiProvider(provider_configs["gemini"])
-                if gemini_provider.enabled:
-                    self.providers["gemini"] = gemini_provider
-                    logger.info("Gemini provider initialized successfully")
-                else:
-                    logger.warning(
-                        "Gemini provider disabled due to missing configuration"
-                    )
-            except Exception as e:
-                logger.warning(f"Gemini provider initialization failed: {str(e)}")
-
-        if not self.providers:
-            logger.warning(
-                "No providers initialized successfully - Brain will have limited functionality"
-            )
-        else:
-            logger.info(f"Initialized providers: {list(self.providers.keys())}")
-
-    async def process_request(self, request_data):
+            logger.error(f"Failed to initialize Brain: {str(e)}")
+            raise
+    
+    
+    async def _ensure_initialized(self):
+        """Ensure the Brain is initialized before processing requests"""
+        if not self._initialized:
+            await self.initialize()
+    
+    async def execute_agent_request(
+        self,
+        specifications: AgentExecutionSpec,
+        request: BrainRequest,
+        messages: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
         """
-        Main entry point for processing Brain requests
-
+        Execute request according to agent's specifications.
+        Agent decides everything, Brain executes.
+        
         Args:
-            request_data: Dictionary containing the request data
-
+            specifications: Agent's specifications for data sources, provider, tools, processing
+            request: Original BrainRequest object
+            messages: Formatted messages for LLM
+            
         Returns:
-            Dictionary with the AI's response
+            Response dictionary with content and metadata
         """
         start_time = time.time()
+        request_id = str(uuid.uuid4())
+        
+        try:
+            logger.info(f"Executing agent request {request_id} with agent specifications")
+            
+            # Sub-node 0: Validate specifications
+            if self.spec_validator:
+                validation_result = await self.spec_validator.validate_execution_spec(specifications)
+                if not validation_result.valid:
+                    logger.error(f"Specification validation failed: {validation_result.errors}")
+                    return {
+                        "success": False,
+                        "content": "Invalid execution specification",
+                        "error": "; ".join(validation_result.errors),
+                        "metadata": {
+                            "request_id": request_id,
+                            "validation_errors": validation_result.errors
+                        }
+                    }
+                
+                # Log warnings and suggestions
+                if validation_result.warnings:
+                    logger.warning(f"Specification warnings: {validation_result.warnings}")
+                if validation_result.suggestions:
+                    logger.info(f"Specification suggestions: {validation_result.suggestions}")
+            
+            # Sub-node 1: Query specified data sources
+            context_data = await self._query_specified_data_sources(
+                specifications.data_sources,
+                request
+            )
+            
+            # Sub-node 2-4: Use Workflow Engine (LangGraph) to orchestrate execution
+            orchestration_result = await self.workflow_engine.orchestrate_request(
+                messages=messages,
+                provider_spec=specifications.provider,
+                processing_spec=specifications.processing,
+                context_data=context_data,
+                tools=specifications.tools
+            )
+            
+            processing_time = time.time() - start_time
+            
+            return {
+                "success": orchestration_result.success,
+                "content": orchestration_result.content,
+                "metadata": {
+                    "request_id": request_id,
+                    "processing_time": processing_time,
+                    "provider_used": orchestration_result.provider_used,
+                    "iterations_used": orchestration_result.iterations_used,
+                    "data_sources_queried": len(specifications.data_sources),
+                    "tools_applied": len(specifications.tools),
+                    **orchestration_result.metadata
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error executing agent request {request_id}: {str(e)}")
+            return {
+                "success": False,
+                "content": "Failed to process request",
+                "error": str(e),
+                "metadata": {
+                    "request_id": request_id,
+                    "processing_time": time.time() - start_time
+                }
+            }
+    
+    async def process_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Main entry point for processing Brain requests
+        Routes to appropriate agent using the plugin system
+        """
+        # Ensure initialization for backward compatibility
+        await self._ensure_initialized()
+        
+        start_time = time.time()
         request_id = request_data.get("id", str(uuid.uuid4()))
-
+        
         try:
             # Update analytics
-            self.analytics["total_requests"] += 1
+            self.analytics.total_requests += 1
             application = request_data.get("application", "general")
-            self.analytics["application_usage"][application] = (
-                self.analytics["application_usage"].get(application, 0) + 1
+            self.analytics.application_usage[application] = (
+                self.analytics.application_usage.get(application, 0) + 1
             )
-
-            # Basic security validation
+            
+            # Security validation
             if not self._validate_request(request_data):
-                return {
-                    "id": request_id,
-                    "success": False,
-                    "error": "Request validation failed",
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-            # Route to appropriate handler
-            response = await self._route_request(request_data)
-
-            # Update analytics
+                return self._create_error_response(
+                    request_id, "Request validation failed", start_time
+                )
+            
+            # Rate limiting check
+            user_id = request_data.get("user_context", {}).get("user_id", "anonymous")
+            if not self.security_manager.check_rate_limit(user_id):
+                return self._create_error_response(
+                    request_id, "Rate limit exceeded", start_time
+                )
+            
+            # Create BrainRequest object
+            brain_request = self._create_brain_request(request_data)
+            
+        
+            
+            # For legacy support, create a simple execution
+            brain_request = self._create_brain_request(request_data)
+            
+            # Simple response for legacy API
+            response_content = "Brain is ready. Please use plugin-based agents for request processing."
+            
             processing_time = time.time() - start_time
-            self.analytics["average_response_time"] = (
-                self.analytics["average_response_time"]
-                * (self.analytics["total_requests"] - 1)
-                + processing_time
-            ) / self.analytics["total_requests"]
-
-            if response.get("success", False):
-                self.analytics["success_rate"] = (
-                    self.analytics["success_rate"]
-                    * (self.analytics["total_requests"] - 1)
-                    + 1.0
-                ) / self.analytics["total_requests"]
-            else:
-                self.analytics["error_rate"] = (
-                    self.analytics["error_rate"]
-                    * (self.analytics["total_requests"] - 1)
-                    + 1.0
-                ) / self.analytics["total_requests"]
-
-            return response
-
+            
+            return {
+                "success": True,
+                "message": response_content,
+                "data": {},
+                "error": None,
+                "metadata": {
+                    "request_id": request_id,
+                    "processing_time": processing_time,
+                    "architecture": "plugin_based",
+                    "note": "Use plugins to connect agents to Brain"
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+            
         except Exception as e:
             logger.error(f"Error processing Brain request {request_id}: {str(e)}")
-            self.analytics["error_rate"] = (
-                self.analytics["error_rate"] * (self.analytics["total_requests"] - 1)
-                + 1.0
-            ) / self.analytics["total_requests"]
-
-            return {
-                "id": request_id,
-                "success": False,
-                "error": f"Internal Brain error: {str(e)}",
-                "timestamp": datetime.now().isoformat(),
-            }
-
-    def _validate_request(self, request_data):
-        """Basic request validation"""
-        required_fields = ["message", "application", "user_context"]
+            processing_time = time.time() - start_time
+            self._update_analytics(False, processing_time)
+            
+            return self._create_error_response(
+                request_id, f"Internal Brain error: {str(e)}", start_time
+            )
+    
+    def _create_brain_request(self, request_data: Dict[str, Any]) -> BrainRequest:
+        """Create BrainRequest object from request data"""
+        from .types import UserContext, RequestContext, RequestMetadata
+        
+        # Extract user context
+        user_context_data = request_data.get("user_context", {})
+        user_context = UserContext(
+            user_id=user_context_data.get("user_id", "anonymous"),
+            session_id=request_data.get("session_id", str(uuid.uuid4())),
+            is_authenticated=user_context_data.get("is_authenticated", False)
+        )
+        
+        # Set user profile data
+        if "ace_score" in user_context_data:
+            user_context.ace_score = user_context_data["ace_score"]
+        
+        # Create request context
+        request_context = RequestContext(
+            session_id=request_data.get("session_id"),
+            user_preferences=None,  # Could be populated from user data
+            application_state=request_data.get("metadata", {}),
+            brain_context={}
+        )
+        
+        # Create request metadata
+        request_metadata = RequestMetadata()
+        
+        return BrainRequest(
+            id=request_data.get("id", str(uuid.uuid4())),
+            application=ApplicationType(request_data.get("application", "general")),
+            message=request_data["message"],
+            user_context=user_context,
+            context=request_context,
+            metadata=request_metadata
+        )
+    
+    def _validate_request(self, request_data: Dict[str, Any]) -> bool:
+        """Validate request data"""
+        required_fields = ["message", "application"]
         return all(field in request_data for field in required_fields)
-
-    async def _retrieve_rag_context(
-        self, message: str, application: str, user_context: Dict[str, Any], k: int = 5
-    ) -> str:
-        """
-        Retrieve relevant context from RAG vectorstore
-
-        Args:
-            message: User's message
-            application: Application type for context filtering
-            user_context: User context for personalized retrieval
-            k: Number of documents to retrieve
-
-        Returns:
-            Formatted context string to add to system prompt
-        """
-        if not self.vectorstore:
-            return ""
-
-        try:
-            # Update RAG analytics
-            self.analytics["rag_usage"]["queries"] += 1
-
-            # Retrieve relevant documents based on application
-            relevant_docs = []
-
-            if (
-                application in ["healing-rooms", "chatbot"]
-                and user_context.get("ace_score", 0) > 0
-            ):
-                # For trauma-informed applications, prioritize empathetic content
-                empathy_docs = self.vectorstore.similarity_search(
-                    message, k=k // 2, filter={"source": "empathetic_dialogues"}
-                )
-                general_docs = self.vectorstore.similarity_search(
-                    message, k=k - len(empathy_docs)
-                )
-                relevant_docs = empathy_docs + general_docs
-
-            elif application == "inside-our-ai":
-                # For AI awareness, prioritize AI-related content
-                relevant_docs = self.vectorstore.similarity_search(
-                    f"AI artificial intelligence {message}", k=k
-                )
-
-            elif application == "compliance":
-                # For compliance, prioritize regulatory content
-                relevant_docs = self.vectorstore.similarity_search(
-                    f"compliance regulation ethics {message}", k=k
-                )
-            else:
-                # Standard similarity search
-                relevant_docs = self.vectorstore.similarity_search(message, k=k)
-
-            if not relevant_docs:
-                return ""
-
-            # Update analytics
-            self.analytics["rag_usage"]["successful_retrievals"] += 1
-            current_avg = self.analytics["rag_usage"]["average_documents_retrieved"]
-            total_retrievals = self.analytics["rag_usage"]["successful_retrievals"]
-            self.analytics["rag_usage"]["average_documents_retrieved"] = (
-                current_avg * (total_retrievals - 1) + len(relevant_docs)
-            ) / total_retrievals
-
-            # Format context based on application
-            context_parts = []
-            for doc in relevant_docs:
-                context_parts.append(doc.page_content)
-
-            combined_context = "\n\n".join(context_parts)
-
-            # Application-specific context enhancement
-            if application == "healing-rooms" and user_context.get("ace_score", 0) > 0:
-                enhanced_context = f"""
-Relevant Knowledge Base (Use with Extra Empathy):
-{combined_context}
-
-Instructions: Share this information with gentle, validating language that acknowledges the user's strength and resilience. Focus on healing and hope."""
-
-            elif application == "inside-our-ai":
-                enhanced_context = f"""
-AI Education Knowledge Base:
-{combined_context}
-
-Instructions: Use this information to explain how Think Round uses AI responsibly and transparently."""
-
-            elif application == "compliance":
-                enhanced_context = f"""
-Compliance Knowledge Base:
-{combined_context}
-
-Instructions: This is general information only. Encourage consultation with legal professionals for specific advice."""
-
-            else:
-                enhanced_context = f"""
-Relevant Knowledge Base:
-{combined_context}
-
-Instructions: Use this information to provide helpful, accurate responses while maintaining empathy and support."""
-
-            logger.info(
-                f"RAG retrieved {len(relevant_docs)} documents for {application} application"
+    
+    def _convert_agent_response(self, agent_response, request_id: str, processing_time: float) -> Dict[str, Any]:
+        """Convert AgentResponse to API response format matching main.py expectations"""
+        return {
+            "success": agent_response.success,
+            "message": agent_response.content,
+            "data": agent_response.metadata,
+            "error": None if agent_response.success else agent_response.metadata.get("error", "Agent processing failed"),
+            "metadata": {
+                **agent_response.metadata,
+                "processing_time": processing_time,
+                "plugin_mode": True,
+                "request_id": request_id
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def _create_error_response(self, request_id: str, error_message: str, start_time: float) -> Dict[str, Any]:
+        """Create error response matching main.py expectations"""
+        return {
+            "success": False,
+            "message": None,
+            "data": None,
+            "error": error_message,
+            "metadata": {
+                "processing_time": time.time() - start_time,
+                "request_id": request_id
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def _update_analytics(self, success: bool, processing_time: float, agent_id: str = None, workflow_type: str = None):
+        """Update analytics data"""
+        
+        # Update success rate
+        total = self.analytics.total_requests
+        if success:
+            self.analytics.success_rate = (
+                self.analytics.success_rate * (total - 1) + 1.0
+            ) / total
+        else:
+            self.analytics.error_rate = (
+                self.analytics.error_rate * (total - 1) + 1.0
+            ) / total
+        
+        # Update response time
+        self.analytics.average_response_time = (
+            self.analytics.average_response_time * (total - 1) + processing_time
+        ) / total
+        
+        # Update plugin usage
+        if agent_id:
+            self.analytics.plugin_usage[agent_id] = (
+                self.analytics.plugin_usage.get(agent_id, 0) + 1
             )
-            return enhanced_context
-
-        except Exception as e:
-            logger.error(f"RAG retrieval failed: {str(e)}")
-            return ""
-
-    async def _route_request(self, request_data):
-        """Route request to appropriate application handler"""
-
-        application = request_data.get("application", "general")
-
-        handlers = {
-            "healing-rooms": self._handle_healing_rooms,
-            "inside-our-ai": self._handle_ai_awareness,
-            "chatbot": self._handle_chatbot,
-            "compliance": self._handle_compliance,
-            "exterior-spaces": self._handle_exterior_spaces,
-            "general": self._handle_general,
-            "agent_orchestrator": self._handle_agent_orchestrator,
-        }
-
-        handler = handlers.get(application, self._handle_general)
-        return await handler(request_data)
-
-    async def _handle_healing_rooms(self, request_data):
-        """Handle healing rooms requests with trauma-informed approach"""
-
-        # Retrieve RAG context first
-        rag_context = await self._retrieve_rag_context(
-            request_data["message"],
-            "healing-rooms",
-            request_data.get("user_context", {}),
-            k=5,
-        )
-
-        # Use trauma-safe prompting with RAG enhancement
-        base_system_prompt = self._get_healing_rooms_prompt(
-            request_data.get("user_context", {})
-        )
-
-        # Combine system prompt with RAG context
-        if rag_context:
-            system_prompt = f"{base_system_prompt}\n\n{rag_context}"
-        else:
-            system_prompt = base_system_prompt
-
-        # Select appropriate provider (prefer local for sensitive content)
-        provider = self._select_provider("healing-rooms")
-
-        # Process with trauma context
-        enhanced_request = {
-            "message": request_data["message"],
-            "system_prompt": system_prompt,
-            "user_context": request_data.get("user_context", {}),
-            "application": "healing-rooms",
-            "trauma_safe": True,
-            "rag_enhanced": bool(rag_context),
-        }
-
-        response = await provider.process_request(enhanced_request)
-
-        # Post-process for trauma safety
-        safe_response = await self._ensure_trauma_safety(
-            response, request_data.get("user_context", {})
-        )
-
-        return safe_response
-
-    async def _handle_ai_awareness(self, request_data):
-        """Handle Inside our AI showcase requests"""
-
-        # Retrieve RAG context for AI education
-        rag_context = await self._retrieve_rag_context(
-            request_data["message"],
-            "inside-our-ai",
-            request_data.get("user_context", {}),
-            k=5,
-        )
-
-        # Educational system prompt
-        base_system_prompt = self._get_ai_awareness_prompt(
-            request_data.get("user_context", {})
-        )
-
-        # Combine with RAG context
-        if rag_context:
-            system_prompt = f"{base_system_prompt}\n\n{rag_context}"
-        else:
-            system_prompt = base_system_prompt
-
-        # Select provider based on educational needs
-        provider = self._select_provider("inside-our-ai")
-
-        # Enhance with educational context
-        enhanced_request = {
-            "message": request_data["message"],
-            "system_prompt": system_prompt,
-            "user_context": request_data.get("user_context", {}),
-            "application": "inside-our-ai",
-            "educational": True,
-            "rag_enhanced": bool(rag_context),
-        }
-
-        response = await provider.process_request(enhanced_request)
-
-        # Add educational metadata
-        if response.get("success") and "metadata" in response:
-            response["metadata"]["sources"] = [
-                "ThinkxLife AI Ethics Database",
-                "Educational Content",
-                "Knowledge Base",
-            ]
-
-        return response
-
-    async def _handle_chatbot(self, request_data):
-        """Handle general chatbot requests"""
-
-        # Retrieve RAG context for chatbot
-        rag_context = await self._retrieve_rag_context(
-            request_data["message"],
-            "chatbot",
-            request_data.get("user_context", {}),
-            k=5,
-        )
-
-        base_system_prompt = self._get_chatbot_prompt(
-            request_data.get("user_context", {})
-        )
-
-        # Combine with RAG context
-        if rag_context:
-            system_prompt = f"{base_system_prompt}\n\n{rag_context}"
-        else:
-            system_prompt = base_system_prompt
-
-        provider = self._select_provider("chatbot")
-
-        # Use existing chatbot core logic
-        enhanced_request = {
-            "message": request_data["message"],
-            "system_prompt": system_prompt,
-            "user_context": request_data.get("user_context", {}),
-            "application": "chatbot",
-            "rag_enhanced": bool(rag_context),
-        }
-
-        return await provider.process_request(enhanced_request)
-
-    async def _handle_compliance(self, request_data):
-        """Handle compliance and regulatory requests"""
-
-        # Retrieve RAG context for compliance
-        rag_context = await self._retrieve_rag_context(
-            request_data["message"],
-            "compliance",
-            request_data.get("user_context", {}),
-            k=5,
-        )
-
-        base_system_prompt = self._get_compliance_prompt(
-            request_data.get("user_context", {})
-        )
-
-        # Combine with RAG context
-        if rag_context:
-            system_prompt = f"{base_system_prompt}\n\n{rag_context}"
-        else:
-            system_prompt = base_system_prompt
-
-        provider = self._select_provider("compliance")
-
-        enhanced_request = {
-            "message": request_data["message"],
-            "system_prompt": system_prompt,
-            "user_context": request_data.get("user_context", {}),
-            "application": "compliance",
-            "regulatory_focus": True,
-            "rag_enhanced": bool(rag_context),
-        }
-
-        response = await provider.process_request(enhanced_request)
-
-        # Add compliance metadata
-        if response.get("success") and "metadata" in response:
-            response["metadata"]["sources"] = [
-                "Regulatory Database",
-                "Compliance Guidelines",
-                "Knowledge Base",
-            ]
-
-        return response
-
-    async def _handle_exterior_spaces(self, request_data):
-        """Handle exterior spaces creative AI requests"""
-
-        # Retrieve RAG context for exterior spaces
-        rag_context = await self._retrieve_rag_context(
-            request_data["message"],
-            "exterior-spaces",
-            request_data.get("user_context", {}),
-            k=5,
-        )
-
-        base_system_prompt = self._get_exterior_spaces_prompt(
-            request_data.get("user_context", {})
-        )
-
-        # Combine with RAG context
-        if rag_context:
-            system_prompt = f"{base_system_prompt}\n\n{rag_context}"
-        else:
-            system_prompt = base_system_prompt
-
-        provider = self._select_provider("exterior-spaces")
-
-        enhanced_request = {
-            "message": request_data["message"],
-            "system_prompt": system_prompt,
-            "user_context": request_data.get("user_context", {}),
-            "application": "exterior-spaces",
-            "creative": True,
-            "rag_enhanced": bool(rag_context),
-        }
-
-        return await provider.process_request(enhanced_request)
-
-    async def _handle_general(self, request_data):
-        """Handle general requests"""
-
-        # Retrieve RAG context for general queries
-        rag_context = await self._retrieve_rag_context(
-            request_data["message"],
-            "general",
-            request_data.get("user_context", {}),
-            k=5,
-        )
-
-        base_system_prompt = self._get_general_prompt(
-            request_data.get("user_context", {})
-        )
-
-        # Combine with RAG context
-        if rag_context:
-            system_prompt = f"{base_system_prompt}\n\n{rag_context}"
-        else:
-            system_prompt = base_system_prompt
-
-        provider = self._select_provider("general")
-
-        enhanced_request = {
-            "message": request_data["message"],
-            "system_prompt": system_prompt,
-            "user_context": request_data.get("user_context", {}),
-            "application": "general",
-            "rag_enhanced": bool(rag_context),
-        }
-
-        return await provider.process_request(enhanced_request)
-
-    async def _handle_agent_orchestrator(self, request_data):
-        pass
-    # TODO: import orchestrator and use it.
         
-
-    def _select_provider(self, application):
-        """Select the best provider for the request"""
-
-        if not self.providers:
-            raise RuntimeError(
-                "No providers available - ensure at least one API key is configured"
+        # Update workflow usage
+        if workflow_type:
+            self.analytics.workflow_executions[workflow_type] = (
+                self.analytics.workflow_executions.get(workflow_type, 0) + 1
             )
-
-        # Use OpenAI provider first if available
-        if "openai" in self.providers:
-            return self.providers["openai"]
-        elif "gemini" in self.providers:
-            return self.providers["gemini"]
-
-        # This should not happen due to the check above, but just in case
-        raise RuntimeError("No available providers")
-
-    def _get_healing_rooms_prompt(self, user_context):
-        """Get trauma-informed system prompt for healing rooms"""
-        ace_score = user_context.get("ace_score", 0.0)
-        ace_details = user_context.get("ace_details", [])
-
-        # Create sensitive context about specific trauma areas without being explicit
-        trauma_context = ""
-        if ace_details:
-            trauma_areas = []
-            for detail in ace_details:
-                if "swear at you" in detail or "insult you" in detail:
-                    trauma_areas.append("emotional abuse")
-                elif "push, grab, slap" in detail:
-                    trauma_areas.append("physical abuse")
-                elif "touch, fondle" in detail:
-                    trauma_areas.append("sexual abuse")
-                elif "no one in your family loved you" in detail:
-                    trauma_areas.append("emotional neglect")
-                elif "didn't have enough to eat" in detail:
-                    trauma_areas.append("physical neglect")
-                elif "parents ever separated" in detail:
-                    trauma_areas.append("family dysfunction")
-                elif "mother or stepmother" in detail and "pushed" in detail:
-                    trauma_areas.append("domestic violence")
-                elif "problem drinker" in detail or "street drugs" in detail:
-                    trauma_areas.append("household substance abuse")
-                elif "depressed, mentally ill" in detail:
-                    trauma_areas.append("household mental illness")
-                elif "jail or prison" in detail:
-                    trauma_areas.append("household member incarceration")
-
-            if trauma_areas:
-                unique_areas = list(set(trauma_areas))
-                trauma_context = (
-                    f"\n- Specific areas of concern include: {', '.join(unique_areas)}"
-                )
-
-        return f"""You are Zoe, an empathetic AI companion for ThinkxLife's healing rooms. 
+    
+    async def get_health_status(self) -> Dict[str, Any]:
+        """Get comprehensive health status"""
+        await self._ensure_initialized()
         
-        Guidelines:
-        - Always prioritize user safety and emotional well-being
-        - Use gentle, non-triggering language that validates their experiences
-        - Acknowledge trauma without re-traumatizing or being explicit
-        - Focus on healing, growth, and resilience
-        - Never provide medical or therapeutic advice
-        - Encourage professional help when appropriate
-        - Be especially gentle and validating given their trauma history
-        
-        User Context:
-        - ACE Score: {ace_score}
-        - This indicates {'higher' if ace_score > 4 else 'moderate' if ace_score > 1 else 'lower'} trauma exposure{trauma_context}
-        - Respond with extra empathy, validation, and hope
-        - Acknowledge their strength in surviving and seeking support
-        
-        Remember: This person has shown courage by sharing their story. Treat them with the utmost care and respect."""
-
-    def _get_ai_awareness_prompt(self, user_context):
-        """Get system prompt for Inside our AI showcase"""
-
-        return f"""You are an AI representative showcasing how Think Round Inc uses AI to enhance their programs.
-        
-        Guidelines:
-        - Explain how Think Round integrates AI into healing rooms, arts programs, and community initiatives
-        - Focus on AI as an enhancement tool, not replacement for human connection
-        - Emphasize trauma-informed, culturally sensitive AI applications
-        - Share examples of AI supporting creativity, healing, and community building
-        - Maintain Think Round's values of human dignity and cultural authenticity
-        
-        Your role is to demonstrate Think Round's thoughtful AI integration across their various programs."""
-
-    def _get_chatbot_prompt(self, user_context):
-        """Get general chatbot system prompt"""
-        return """You are ThinkxLife's AI assistant, focused on ethical AI, healing, and human wellbeing.
-        
-        Guidelines:
-        - Be helpful, empathetic, and ethical
-        - Respect user privacy and boundaries
-        - Promote positive mental health and wellbeing
-        - Showcase responsible AI integration within Think Round programs
-        - Never provide medical, legal, or financial advice
-        
-        You represent ThinkxLife's values of ethical AI and human-centered technology."""
-
-    def _get_compliance_prompt(self, user_context):
-        """Get compliance-focused system prompt"""
-        return """You are a compliance-focused AI assistant for ThinkxLife.
-        
-        Guidelines:
-        - Provide general information about AI regulations
-        - Focus on GDPR, AI Act, and ethical AI frameworks
-        - Never provide legal advice
-        - Encourage consultation with legal professionals
-        - Emphasize responsible AI practices
-        
-        Help users understand AI compliance landscape."""
-
-    def _get_exterior_spaces_prompt(self, user_context):
-        """Get creative system prompt for exterior spaces"""
-        return """You are a creative AI assistant for ThinkxLife's exterior spaces platform.
-        
-        Guidelines:
-        - Inspire creativity in outdoor and architectural design
-        - Consider sustainability and environmental impact
-        - Promote inclusive and accessible design
-        - Encourage connection with nature
-        - Balance aesthetics with functionality
-        
-        Help users envision beautiful, sustainable exterior spaces."""
-
-    def _get_general_prompt(self, user_context):
-        """Get general system prompt"""
-        ace_score = user_context.get("ace_score", 0.0)
-
-        # Add trauma-sensitive context if ACE score is present
-        trauma_sensitivity = ""
-        if ace_score > 0:
-            trauma_sensitivity = """
-        - Use trauma-informed language and approaches
-        - Be especially gentle and validating
-        - Acknowledge the user's strength and resilience
-        - Avoid triggering language or assumptions"""
-
-        return f"""You are Zoe, ThinkxLife's empathetic AI assistant.
-        
-        Guidelines:
-        - Be helpful, empathetic, and supportive
-        - Maintain ethical AI principles
-        - Respect user privacy and boundaries
-        - Promote wellbeing and positive mental health
-        - Stay within your knowledge and capabilities{trauma_sensitivity}
-        
-        Assist users with warmth and understanding while maintaining appropriate boundaries."""
-
-    async def _ensure_trauma_safety(self, response, user_context):
-        """Ensure response is trauma-safe"""
-        # Implement trauma safety checks
-        if response.get("success") and response.get("message"):
-            # Basic trauma safety filtering
-            trigger_words = ["suicide", "self-harm", "abuse", "violence"]
-            message_lower = response["message"].lower()
-
-            for trigger in trigger_words:
-                if trigger in message_lower:
-                    # Add safety disclaimer
-                    response[
-                        "message"
-                    ] += "\n\n⚠️ If you're experiencing crisis thoughts, please contact a mental health professional or crisis hotline immediately."
-                    break
-
-        return response
-
-    async def get_health_status(self):
-        """Get overall Brain health status"""
-
-        provider_health = {}
         overall_status = "healthy"
-
-        # Check each provider
-        for name, provider in self.providers.items():
-            try:
-                health = await provider.health_check()
-                provider_health[name] = health
-
-                if health.get("status") != "healthy":
-                    overall_status = "degraded"
-
-            except Exception as e:
-                provider_health[name] = {"status": "unhealthy", "error": str(e)}
-                overall_status = "unhealthy"
-
-        # Check RAG health
-        rag_health = {
-            "available": bool(self.vectorstore),
-            "status": "healthy" if self.vectorstore else "disabled",
-        }
-
-        if self.vectorstore:
-            try:
-                # Test RAG functionality
-                test_docs = self.vectorstore.similarity_search("test", k=1)
-                rag_health["test_query"] = "successful"
-            except Exception as e:
-                rag_health["status"] = "unhealthy"
-                rag_health["error"] = str(e)
-                if overall_status == "healthy":
-                    overall_status = "degraded"
-
+        
+        # Check data source health
+        data_source_health = {}
+        if self.data_source_manager:
+            data_source_health = await self.data_source_manager.health_check_all()
+            if any(status.get("status") == "unhealthy" for status in data_source_health.values()):
+                overall_status = "degraded"
+        
         # System health
         uptime = (datetime.now() - self.start_time).total_seconds()
         system_health = {
             "uptime_seconds": uptime,
-            "total_requests": self.analytics["total_requests"],
-            "success_rate": self.analytics["success_rate"],
-            "error_rate": self.analytics["error_rate"],
-            "average_response_time": self.analytics["average_response_time"],
+            "total_requests": self.analytics.total_requests,
+            "success_rate": self.analytics.success_rate,
+            "error_rate": self.analytics.error_rate,
+            "average_response_time": self.analytics.average_response_time,
+            "active_plugins": self.analytics.active_plugins
         }
-
+        
         return {
             "overall": overall_status,
-            "providers": provider_health,
-            "rag": rag_health,
+            "data_sources": data_source_health,
             "system": system_health,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now().isoformat()
         }
-
-    async def get_analytics(self):
-        """Get Brain analytics"""
-
+    
+    async def get_analytics(self) -> Dict[str, Any]:
+        """Get comprehensive analytics"""
+        await self._ensure_initialized()
+        
         # Update uptime
         uptime = (datetime.now() - self.start_time).total_seconds()
-        self.analytics["uptime"] = uptime / 3600  # Convert to hours
-
-        return self.analytics
-
-    async def shutdown(self):
+        self.analytics.uptime = uptime / 3600  # Convert to hours
+        
+        # Get data source information
+        data_source_info = {}
+        if self.data_source_manager:
+            sources_info = self.data_source_manager.list_sources()
+            for source_id, info in sources_info.items():
+                data_source_info[source_id] = {
+                    "type": info["type"],
+                    "enabled": info["enabled"],
+                    "usage_count": self.analytics.data_source_usage.get(source_id, 0)
+                }
+        
+        return {
+            **self.analytics.__dict__,
+            "data_sources": data_source_info,
+            "workflows": self.analytics.workflow_executions,
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    # Legacy methods removed - agents now connect via plugins
+    
+    async def _query_specified_data_sources(
+        self,
+        data_source_specs: List[DataSourceSpec],
+        request: BrainRequest
+    ) -> Dict[str, Any]:
+        """Query data sources as specified by agent"""
+        context_data = {}
+        
+        if not data_source_specs:
+            return context_data
+        
+        for spec in data_source_specs:
+            if not spec.enabled:
+                continue
+                
+            try:
+                source_type = spec.source_type
+                
+                # Handle conversation history - agents provide this through specs
+                if source_type == DataSourceType.CONVERSATION_HISTORY:
+                    # Agents provide conversation history through their specifications
+                    # This is now handled by the agent, not Brain
+                    logger.debug("Conversation history requested - should be provided by agent in spec.query")
+                
+                # Handle vector DB or other data sources
+                elif source_type in [DataSourceType.VECTOR_DB, DataSourceType.FILE_SYSTEM]:
+                    if self.data_source_manager:
+                        # Check if this is an external agent-specific data source
+                        if spec.config and spec.config.get("db_path"):
+                            # Register external data source if needed
+                            source_id = await self.data_source_manager.get_or_create_external_source(spec.config)
+                            
+                            if source_id:
+                                # Query the specific external source
+                                external_source = self.data_source_manager.data_sources.get(source_id)
+                                if external_source:
+                                    query = spec.query or request.message
+                                    results = await external_source.query(
+                                        query,
+                                        context=spec.filters,
+                                        k=spec.limit
+                                    )
+                                    context_data[f"external_{source_type.value}_results"] = results
+                                    logger.info(f"Queried external data source: {source_id}")
+                            else:
+                                logger.warning(f"Failed to register external data source from spec: {spec.config}")
+                        else:
+                            # Use default data source manager
+                            query = spec.query or request.message
+                            results = await self.data_source_manager.query_best(
+                                query,
+                                context=spec.filters,
+                                k=spec.limit
+                            )
+                            context_data[f"{source_type.value}_results"] = results
+                
+                # Handle web search via MCP
+                elif source_type == DataSourceType.WEB_SEARCH:
+                    # Tools are handled by workflow engine
+                    pass
+                
+                logger.info(f"Queried data source: {source_type.value}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to query data source {spec.source_type}: {str(e)}")
+        
+        return context_data
+    
+    async def _get_specified_provider(self, provider_spec: Optional[ProviderSpec]):
+        """Get provider as specified by agent"""
+        if not provider_spec:
+            # No provider specified, return None (agent handles this case)
+            return None
+        
+        provider_type = provider_spec.provider_type
+        
+        # Check if provider is already in cache
+        if provider_type in self.providers_cache:
+            return self.providers_cache[provider_type]
+        
+        # Initialize new provider with agent's configuration
+        try:
+            provider_config = provider_spec.to_dict()
+            provider = create_provider(provider_type, provider_config)
+            await provider.initialize()
+            
+            # Cache for future use
+            self.providers_cache[provider_type] = provider
+            
+            logger.info(f"Initialized provider {provider_type} as specified by agent")
+            return provider
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize specified provider {provider_type}: {str(e)}")
+            return None
+    
+    async def _apply_specified_tools(
+        self,
+        tool_specs: List[ToolSpec],
+        context_data: Dict[str, Any],
+        request: BrainRequest
+    ) -> Dict[str, Any]:
+        """Apply tools as specified by agent"""
+        enhanced_data = {}
+        
+        for tool_spec in tool_specs:
+            if not tool_spec.enabled:
+                continue
+            
+            try:
+                tool_name = tool_spec.name
+                tool_config = tool_spec.config
+                
+                # Apply tool based on name
+                # This is where MCP tools would be invoked
+                # Tools are handled by workflow engine
+                pass
+                
+                logger.info(f"Applied tool: {tool_name}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to apply tool {tool_spec.name}: {str(e)}")
+        
+        return enhanced_data
+    
+    async def _execute_with_provider(
+        self,
+        provider: Any,
+        messages: List[Dict[str, str]],
+        context_data: Dict[str, Any],
+        processing_spec: ProcessingSpec,
+        provider_spec: Optional[ProviderSpec]
+    ) -> Dict[str, Any]:
+        """Execute LLM request with specified provider and processing configuration"""
+        
+        if not provider:
+            return {
+                "success": False,
+                "content": "No provider available",
+                "metadata": {}
+            }
+        
+        try:
+            # Prepare provider parameters from agent specifications
+            provider_params = provider_spec.to_dict() if provider_spec else {}
+            
+            # Remove provider_type as it's not a generation parameter
+            provider_params.pop("provider_type", None)
+            
+            # Execute with iterative processing if specified
+            max_iterations = processing_spec.max_iterations
+            
+            for iteration in range(max_iterations):
+                try:
+                    # Generate response
+                    response = await provider.generate_response(
+                        messages=messages,
+                        **provider_params
+                    )
+                    
+                    # Check if response is satisfactory
+                    if response.get("success", False) and response.get("content"):
+                        return {
+                            "success": True,
+                            "content": response.get("content", ""),
+                            "metadata": {
+                                "iteration": iteration + 1,
+                                **response.get("metadata", {})
+                            }
+                        }
+                    
+                    # If not satisfactory and we have more iterations, continue
+                    if iteration < max_iterations - 1:
+                        logger.info(f"Response not satisfactory, trying iteration {iteration + 2}")
+                        continue
+                    
+                except Exception as e:
+                    logger.error(f"Provider execution failed on iteration {iteration + 1}: {str(e)}")
+                    if iteration == max_iterations - 1:
+                        raise
+            
+            # If we get here, all iterations failed
+            return {
+                "success": False,
+                "content": "Failed to generate satisfactory response",
+                "metadata": {"iterations_attempted": max_iterations}
+            }
+            
+        except Exception as e:
+            logger.error(f"Error executing with provider: {str(e)}")
+            return {
+                "success": False,
+                "content": "Provider execution failed",
+                "metadata": {"error": str(e)}
+            }
+    
+    async def shutdown(self) -> None:
         """Gracefully shutdown the Brain"""
-
-        logger.info("Shutting down ThinkxLife Brain...")
-
-        # Close provider connections
-        for provider in self.providers.values():
-            if hasattr(provider, "close"):
-                await provider.close()
-
+        logger.info("Shutting down Generalized Brain...")
+        
+        # Shutdown components
+        if self.workflow_engine:
+            await self.workflow_engine.shutdown()
+        
+        if self.data_source_manager:
+            await self.data_source_manager.shutdown()
+        
         logger.info("ThinkxLife Brain shutdown complete")
+
+

@@ -9,8 +9,14 @@ class TraumaAwareEvaluator:
         # Use existing Brain instance or create singleton
         self.brain = brain_instance or ThinkxLifeBrain()
         
-        # Use the main LLM provider (e.g., OpenAI)
-        self.llm = self.brain.providers.get("gemini")
+        # Use the main LLM provider (compatible with new Brain structure)
+        # Try legacy_providers first (new structure), then fall back to providers (old structure)
+        if hasattr(self.brain, 'legacy_providers'):
+            self.llm = self.brain.legacy_providers.get("gemini") or self.brain.legacy_providers.get("openai")
+        elif hasattr(self.brain, 'providers'):
+            self.llm = self.brain.providers.get("gemini") or self.brain.providers.get("openai")
+        else:
+            self.llm = None
 
         # Few-shot examples for trigger phrase detection
         self.indirect_trigger_examples = [
@@ -326,9 +332,15 @@ Return only JSON:
 }}
 """
 
-            # Send to LLM for evaluation
-            if self.brain and self.brain.providers.get("gemini"):
-                gemini_provider = self.brain.providers["gemini"]
+            # Send to LLM for evaluation (compatible with new Brain structure)
+            gemini_provider = None
+            if self.brain:
+                if hasattr(self.brain, 'legacy_providers'):
+                    gemini_provider = self.brain.legacy_providers.get("gemini")
+                elif hasattr(self.brain, 'providers'):
+                    gemini_provider = self.brain.providers.get("gemini")
+            
+            if gemini_provider:
 
                 generation_config = genai.types.GenerationConfig(
                     max_output_tokens=gemini_provider.max_tokens,

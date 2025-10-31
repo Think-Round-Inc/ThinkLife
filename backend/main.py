@@ -31,13 +31,13 @@ logger = logging.getLogger(__name__)
 from brain import ThinkxLifeBrain
 
 # Import Zoe AI Companion
-from zoe import ZoeCore
+from agents.zoe import ZoeCore
 
 # Import the Agent Orchestrator
-from agents.orchestrator.orchestra import Orchestrator, get_llm
+from agents.bard.orchestrator.orchestra import Orchestrator, get_llm
 
 # Import TTS Service
-from tts_service import tts_service
+from agents.zoe.tts_service import tts_service
 
 # Global instances
 brain_instance = None

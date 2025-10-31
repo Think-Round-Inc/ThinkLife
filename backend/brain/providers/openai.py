@@ -1,238 +1,304 @@
 """
-OpenAI Provider - Optional external AI provider for ThinkxLife Brain
+OpenAI Provider - Integration with OpenAI GPT models
 """
 
-import asyncio
 import logging
+import os
 import time
-from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional, Union
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 try:
     import openai
+    from openai import AsyncOpenAI
     OPENAI_AVAILABLE = True
 except ImportError:
+    logger.warning("OpenAI library not available. Install with: pip install openai")
     OPENAI_AVAILABLE = False
-    logger.warning("OpenAI package not available. Install with: pip install openai")
+    AsyncOpenAI = None
 
 
 class OpenAIProvider:
     """
-    OpenAI provider for external AI capabilities.
-    
-    This provider integrates with OpenAI's API to provide additional
-    AI capabilities beyond the local chatbot system.
+    OpenAI provider - focused on initialization and request processing
+    Configuration validation is handled by the provider registry
     """
     
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize the OpenAI provider"""
-        if not OPENAI_AVAILABLE:
-            raise ImportError("OpenAI package not available. Install with: pip install openai")
+    def __init__(self, config: Dict[str, Any] = None):
+        """Initialize OpenAI provider with pre-validated configuration"""
+        self.config = config or {}
+        self.name = "openai"
+        self._initialized = False
+        self.client = None
         
-        self.config = config
-        self.api_key = config.get("api_key")
-        self.model = config.get("model", "gpt-4o-mini")
-        self.max_tokens = config.get("max_tokens", 2000)
-        self.temperature = config.get("temperature", 0.7)
-        self.timeout = config.get("timeout", 30.0)
-        self.enabled = config.get("enabled", False)
-        self.organization = config.get("organization")
-        
-        # Check if API key is available from environment if not in config
-        if not self.api_key:
-            import os
-            self.api_key = os.getenv("OPENAI_API_KEY")
-        
-        if not self.api_key:
-            logger.warning("OpenAI API key not found - provider will be disabled")
-            self.enabled = False
-            self.client = None
-            return
-        
-        # Initialize OpenAI client
-        try:
-            self.client = openai.AsyncOpenAI(
-                api_key=self.api_key,
-                organization=self.organization,
-                timeout=self.timeout
-            )
-            logger.info(f"OpenAI provider initialized with model: {self.model}")
-        except Exception as e:
-            logger.error(f"Failed to initialize OpenAI client: {str(e)}")
-            self.enabled = False
-            self.client = None
+        logger.info(f"Initializing {self.name} provider")
     
-    async def process_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+    
+    async def initialize(self) -> bool:
+        """Initialize the provider client - config already validated by registry"""
+        try:
+            if not OPENAI_AVAILABLE:
+                logger.error("OpenAI library not available")
+                return False
+            
+            await self._initialize_provider()
+            self._initialized = True
+            logger.info("OpenAI provider initialized successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI provider: {str(e)}")
+            return False
+    
+    
+    async def _initialize_provider(self) -> None:
+        """Initialize OpenAI client"""
+        if not OPENAI_AVAILABLE:
+            raise ImportError("OpenAI library not available")
+        
+        client_config = {
+            "api_key": self.config["api_key"],
+            "timeout": self.config.get("timeout", 30.0),
+            "max_retries": self.config.get("max_retries", 3),
+        }
+        
+        # Add optional configs
+        if self.config.get("organization"):
+            client_config["organization"] = self.config["organization"]
+        
+        if self.config.get("base_url"):
+            client_config["base_url"] = self.config["base_url"]
+        
+        self.client = AsyncOpenAI(**client_config)
+        logger.info(f"OpenAI client initialized with model: {self.config['model']}")
+    
+    async def generate_response(
+        self, 
+        messages: List[Dict[str, str]], 
+        **kwargs
+    ) -> Dict[str, Any]:
         """
-        Process a request using OpenAI API
+        Generate response using OpenAI
         
         Args:
-            request_data: Enhanced request data from Brain
-            
+            messages: List of message dictionaries
+            **kwargs: Additional parameters (overrides config)
+        
         Returns:
-            Dictionary with response data
+            Dictionary with response content and metadata
         """
-        start_time = time.time()
+        if not self._initialized:
+            raise RuntimeError("Provider not initialized")
         
         try:
-            if not self.enabled or not self.client:
-                return {
-                    "success": False,
-                    "error": "OpenAI provider is disabled or not configured",
-                    "timestamp": datetime.now().isoformat()
-                }
+            # Merge kwargs with config (kwargs take precedence)
+            request_params = {
+                "model": kwargs.get("model", self.config["model"]),
+                "messages": messages,
+                "max_tokens": kwargs.get("max_tokens", self.config["max_tokens"]),
+                "temperature": kwargs.get("temperature", self.config["temperature"]),
+                "top_p": kwargs.get("top_p", self.config["top_p"]),
+                "frequency_penalty": kwargs.get("frequency_penalty", self.config["frequency_penalty"]),
+                "presence_penalty": kwargs.get("presence_penalty", self.config["presence_penalty"]),
+                "stream": kwargs.get("stream", self.config["stream"]),
+            }
             
-            # Extract request components
-            message = request_data.get("message", "")
-            system_prompt = request_data.get("system_prompt", "")
-            user_context = request_data.get("user_context", {})
-            application = request_data.get("application", "general")
+            # Add optional parameters if provided in kwargs or config
+            optional_params = [
+                "stop", "user", "logit_bias", "functions", "function_call", 
+                "tools", "tool_choice", "response_format", "seed", "extra_headers",
+                "extra_query", "extra_body"
+            ]
             
-            # Build messages for OpenAI
-            messages = []
+            for param in optional_params:
+                if param in kwargs:
+                    request_params[param] = kwargs[param]
+                elif self.config.get(param) is not None:
+                    request_params[param] = self.config[param]
             
-            if system_prompt:
-                messages.append({
-                    "role": "system",
-                    "content": system_prompt
-                })
+            # Remove None values
+            request_params = {k: v for k, v in request_params.items() if v is not None}
             
-            # Add conversation history if available
-            history = user_context.get("conversation_history", [])
-            for msg in history[-10:]:  # Last 10 messages
-                messages.append({
-                    "role": msg.get("role", "user"),
-                    "content": msg.get("content", "")
-                })
-            
-            # Add current message
-            messages.append({
-                "role": "user",
-                "content": message
-            })
-            
-            # Make API call
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                stream=False
-            )
+            # Make the request
+            response = await self.client.chat.completions.create(**request_params)
             
             # Extract response
-            ai_message = response.choices[0].message.content
-            tokens_used = response.usage.total_tokens if response.usage else None
-            
-            # Build Brain response
-            brain_response = {
-                "success": True,
-                "message": ai_message,
-                "timestamp": datetime.now().isoformat(),
-                "metadata": {
-                    "provider": "openai",
-                    "model": self.model,
-                    "tokens_used": tokens_used,
-                    "processing_time": time.time() - start_time,
-                    "application": application,
-                    "sources": ["OpenAI API"]
+            if hasattr(response, 'choices') and response.choices:
+                choice = response.choices[0]
+                content = choice.message.content or ""
+                
+                # Build metadata
+                metadata = {
+                    "model": response.model,
+                    "usage": response.usage.dict() if response.usage else {},
+                    "finish_reason": choice.finish_reason,
+                    "index": choice.index,
+                    "provider": "openai"
                 }
-            }
-            
-            # Add application-specific metadata
-            self._add_application_metadata(brain_response, application)
-            
-            return brain_response
-            
-        except Exception as e:
-            logger.error(f"Error in OpenAI provider: {str(e)}")
-            return {
-                "success": False,
-                "error": f"OpenAI provider error: {str(e)}",
-                "timestamp": datetime.now().isoformat(),
-                "metadata": {
-                    "provider": "openai",
-                    "processing_time": time.time() - start_time
-                }
-            }
-    
-    def _add_application_metadata(self, response: Dict[str, Any], application: str):
-        """Add application-specific metadata"""
-        
-        if application == "healing-rooms":
-            response["metadata"]["trauma_informed"] = True
-            response["metadata"]["safety_checked"] = True
-        elif application == "inside-our-ai":
-            response["metadata"]["educational"] = True
-            response["metadata"]["ethics_focused"] = True
-        elif application == "compliance":
-            response["metadata"]["regulatory"] = True
-            response["metadata"]["compliance_checked"] = True
-        elif application == "exterior-spaces":
-            response["metadata"]["creative"] = True
-            response["metadata"]["design_focused"] = True
-    
-    async def health_check(self) -> Dict[str, Any]:
-        """Check the health of the OpenAI provider"""
-        
-        try:
-            if not self.enabled or not self.client:
+                
+                # Add function call info if present
+                if hasattr(choice.message, 'function_call') and choice.message.function_call:
+                    metadata["function_call"] = choice.message.function_call
+                
+                if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
+                    metadata["tool_calls"] = [call.dict() for call in choice.message.tool_calls]
+                
                 return {
-                    "status": "disabled",
-                    "message": "OpenAI provider is disabled or not configured"
-                }
-            
-            # Test API connectivity
-            test_response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": "Health check"}],
-                max_tokens=10,
-                temperature=0
-            )
-            
-            if test_response.choices:
-                return {
-                    "status": "healthy",
-                    "message": "OpenAI provider is operational",
-                    "model": self.model,
-                    "api_status": "connected"
+                    "content": content,
+                    "metadata": metadata,
+                    "success": True
                 }
             else:
                 return {
-                    "status": "degraded",
-                    "message": "OpenAI API responding but with issues"
+                    "content": "",
+                    "metadata": {"error": "No response from OpenAI"},
+                    "success": False
                 }
                 
         except Exception as e:
-            logger.error(f"OpenAI health check failed: {str(e)}")
+            logger.error(f"OpenAI request failed: {str(e)}")
             return {
-                "status": "unhealthy",
-                "message": f"OpenAI health check failed: {str(e)}"
+                "content": "",
+                "metadata": {"error": str(e), "provider": "openai"},
+                "success": False
             }
     
-    async def close(self):
-        """Close the OpenAI provider connection"""
+    async def generate_embeddings(
+        self, 
+        input_text: Union[str, List[str]], 
+        model: str = "text-embedding-ada-002",
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate embeddings using OpenAI
+        
+        Args:
+            input_text: Text or list of texts to embed
+            model: Embedding model to use
+            **kwargs: Additional parameters
+        """
+        if not self._initialized:
+            raise RuntimeError("Provider not initialized")
         
         try:
-            if hasattr(self.client, 'close'):
-                await self.client.close()
-                
-            logger.info("OpenAI provider closed successfully")
+            request_params = {
+                "model": model,
+                "input": input_text,
+                **kwargs
+            }
+            
+            response = await self.client.embeddings.create(**request_params)
+            
+            return {
+                "embeddings": [data.embedding for data in response.data],
+                "usage": response.usage.dict() if response.usage else {},
+                "model": response.model,
+                "success": True
+            }
             
         except Exception as e:
-            logger.error(f"Error closing OpenAI provider: {str(e)}")
+            logger.error(f"OpenAI embeddings request failed: {str(e)}")
+            return {
+                "embeddings": [],
+                "error": str(e),
+                "success": False
+            }
     
-    def get_config(self) -> Dict[str, Any]:
-        """Get provider configuration"""
-        return {
-            "provider": "openai",
-            "enabled": self.enabled,
-            "model": self.model,
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
-            "timeout": self.timeout,
-            "api_key_configured": bool(self.api_key),
-            "organization": self.organization
-        } 
+    async def generate_image(
+        self,
+        prompt: str,
+        model: str = "dall-e-3",
+        size: str = "1024x1024",
+        quality: str = "standard",
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate image using DALL-E
+        
+        Args:
+            prompt: Image description
+            model: Image generation model
+            size: Image size
+            quality: Image quality
+            **kwargs: Additional parameters
+        """
+        if not self._initialized:
+            raise RuntimeError("Provider not initialized")
+        
+        try:
+            request_params = {
+                "model": model,
+                "prompt": prompt,
+                "size": size,
+                "quality": quality,
+                **kwargs
+            }
+            
+            response = await self.client.images.generate(**request_params)
+            
+            return {
+                "images": [image.url for image in response.data],
+                "metadata": {
+                    "model": response.model,
+                    "created": response.created,
+                    "provider": "openai"
+                },
+                "success": True
+            }
+            
+        except Exception as e:
+            logger.error(f"OpenAI image generation failed: {str(e)}")
+            return {
+                "images": [],
+                "error": str(e),
+                "success": False
+            }
+    
+    async def health_check(self) -> Dict[str, Any]:
+        """Check provider health"""
+        try:
+            start_time = time.time()
+            
+            # Simple test message
+            test_messages = [{"role": "user", "content": "Test"}]
+            response = await self.generate_response(test_messages, max_tokens=1)
+            
+            response_time = time.time() - start_time
+            
+            return {
+                "healthy": True,
+                "response_time": response_time,
+                "provider": self.name,
+                "model": self.config.get("model", "unknown")
+            }
+            
+        except Exception as e:
+            logger.error(f"Health check failed for OpenAI provider: {str(e)}")
+            return {
+                "healthy": False,
+                "error": str(e),
+                "provider": self.name
+            }
+    
+    async def close(self) -> None:
+        """Close provider connections"""
+        await self._close_provider()
+        self._initialized = False
+        logger.info(f"OpenAI provider closed")
+    
+    
+    async def _close_provider(self) -> None:
+        """Close OpenAI client"""
+        if hasattr(self, 'client'):
+            # OpenAI async client doesn't need explicit closing
+            pass
+
+
+# Factory function for easy instantiation
+def create_openai_provider(config: Optional[Dict[str, Any]] = None) -> OpenAIProvider:
+    """Create OpenAI provider instance"""
+    if config is None:
+        config = {}
+    return OpenAIProvider(config)
