@@ -1,5 +1,5 @@
 """
-Zoe - AI Companion for ThinkxLife
+Zoe - AI Companion for ThinkLife
 Integrates with the Brain module for LLM calls and responses with full conversation management
 """
 

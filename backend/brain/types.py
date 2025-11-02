@@ -1,5 +1,5 @@
 """
-Type definitions for the ThinkxLife Brain system
+Type definitions for the ThinkLife Brain system
 """
 
 from typing import Dict, List, Optional, Any, Literal

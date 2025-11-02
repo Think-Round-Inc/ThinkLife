@@ -1,5 +1,5 @@
 """
-Text-to-Speech Service for ThinkxLife Backend
+Text-to-Speech Service for ThinkLife Backend
 
 Handles high-quality speech generation using OpenAI TTS API
 """

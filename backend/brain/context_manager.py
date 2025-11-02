@@ -1,5 +1,5 @@
 """
-Context Manager for ThinkxLife Brain
+Context Manager for ThinkLife Brain
 """
 
 from typing import Dict, Any

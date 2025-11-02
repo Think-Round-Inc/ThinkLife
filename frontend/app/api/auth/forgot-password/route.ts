@@ -57,13 +57,13 @@ export async function POST(request: NextRequest) {
 
     // Send email using Resend
     await resend.emails.send({
-      from: 'ThinkxLife <noreply@thinkxlife.com>',
+      from: 'ThinkLife <noreply@thinklife.com>',
       to: [email],
-      subject: 'Reset Your ThinkxLife Password',
+      subject: 'Reset Your ThinkLife Password',
       html: `
         <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-            <h1 style="color: white; margin: 0; font-size: 28px;">ThinkxLife</h1>
+            <h1 style="color: white; margin: 0; font-size: 28px;">ThinkLife</h1>
             <p style="color: #e0e7ff; margin: 10px 0 0 0;">Password Reset Request</p>
           </div>
 
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
             <h2 style="color: #374151; margin-bottom: 20px;">Reset Your Password</h2>
 
             <p style="color: #6b7280; line-height: 1.6; margin-bottom: 30px;">
-              We received a request to reset your password for your ThinkxLife account.
+              We received a request to reset your password for your ThinkLife account.
               Click the button below to create a new password:
             </p>
 
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
 
             <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center;">
               <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                This email was sent by ThinkxLife, a product of Think Round, Inc.<br>
+                This email was sent by ThinkLife, a product of Think Round, Inc.<br>
                 2140 Bush Street, 1, San Francisco, CA 94115
               </p>
             </div>

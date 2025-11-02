@@ -1,6 +1,6 @@
-# ThinkxLife Local Development Setup Guide
+# ThinkLife Local Development Setup Guide
 
-This guide will help you set up and run ThinkxLife locally on your machine, even if you don't have Node.js or Python installed.
+This guide will help you set up and run ThinkLife locally on your machine, even if you don't have Node.js or Python installed.
 
 ## Prerequisites Installation
 
@@ -87,7 +87,7 @@ sudo apt install git
 ### Step 1: Clone the Repository
 ```bash
 git clone <repository-url>
-cd ThinkxLife
+cd ThinkLife
 ```
 
 ### Step 2: Backend Setup (Python)
@@ -180,8 +180,8 @@ NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=your_nextauth_secret_here_minimum_32_characters_long
 
 # Database Configuration (OPTIONAL - for user management features)
-DATABASE_URL="postgresql://username:password@localhost:5432/thinkxlife"
-SHADOW_DATABASE_URL="postgresql://username:password@localhost:5432/thinkxlife_shadow"
+DATABASE_URL="postgresql://username:password@localhost:5432/thinklife"
+SHADOW_DATABASE_URL="postgresql://username:password@localhost:5432/thinklife_shadow"
 
 # External API Endpoints (REQUIRED)
 NEXT_PUBLIC_API_URL=http://localhost:8000

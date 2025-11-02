@@ -1,5 +1,5 @@
 """
-Brain Providers - AI provider implementations for ThinkxLife Brain
+Brain Providers - AI provider implementations for ThinkLife Brain
 """
 
 # Local provider removed

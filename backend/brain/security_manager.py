@@ -1,5 +1,5 @@
 """
-Security Manager for ThinkxLife Brain
+Security Manager for ThinkLife Brain
 """
 
 from typing import Dict, Any

@@ -131,7 +131,7 @@ export default function ExperienceForm({ onSuccess }: ExperienceFormProps) {
           Share Your Experience
         </CardTitle>
         <p className="text-white/90 mt-2">
-          Help others by sharing your journey with ThinkxLife. Your story matters.
+          Help others by sharing your journey with ThinkLife. Your story matters.
         </p>
       </CardHeader>
 
@@ -225,7 +225,7 @@ export default function ExperienceForm({ onSuccess }: ExperienceFormProps) {
             </Label>
             <Textarea
               id="content"
-              placeholder="Tell us about your experience with ThinkxLife. How has it helped you? What do you appreciate most? Your story can inspire others..."
+              placeholder="Tell us about your experience with ThinkLife. How has it helped you? What do you appreciate most? Your story can inspire others..."
               value={formData.content}
               onChange={(e) => handleInputChange('content', e.target.value)}
               className="border-[#D4C4B8] focus:border-[#5B2655] focus:ring-[#5B2655] min-h-[120px] resize-y"

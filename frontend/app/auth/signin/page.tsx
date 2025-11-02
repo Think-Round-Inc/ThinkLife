@@ -9,7 +9,7 @@ export default function SignInPage() {
       <div className="w-full max-w-md rounded-2xl bg-white/90 backdrop-blur-md shadow-xl border border-purple-200/50 p-8 space-y-6">
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-800 to-purple-700 bg-clip-text text-transparent">
-            Sign in to ThinkxLife
+            Sign in to ThinkLife
           </h1>
           <p className="text-slate-600">Welcome back. Choose a sign-in method to continue.</p>
         </div>

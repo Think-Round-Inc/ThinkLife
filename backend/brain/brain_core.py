@@ -1,5 +1,5 @@
 """
-ThinkxLife Brain Core - Central AI orchestration system
+ThinkLife Brain Core - Central AI orchestration system
 """
 
 import asyncio
@@ -14,9 +14,9 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
-class ThinkxLifeBrain:
+class ThinkLifeBrain:
     """
-    Central AI Brain that orchestrates all AI operations across ThinkxLife platform.
+    Central AI Brain that orchestrates all AI operations across ThinkLife platform.
     
     This class manages:
     - OpenAI provider integration
@@ -58,7 +58,7 @@ class ThinkxLifeBrain:
         self._initialize_providers()
         
         self._initialized = True
-        logger.info("ThinkxLife Brain initialized successfully")
+        logger.info("ThinkLife Brain initialized successfully")
     
     def _get_default_config(self):
         """Get default Brain configuration"""
@@ -246,7 +246,7 @@ class ThinkxLifeBrain:
         
         # Add educational metadata
         if response.get("success") and "metadata" in response:
-            response["metadata"]["sources"] = ["ThinkxLife AI Ethics Database", "Educational Content"]
+            response["metadata"]["sources"] = ["ThinkLife AI Ethics Database", "Educational Content"]
         
         return response
     
@@ -363,7 +363,7 @@ class ThinkxLifeBrain:
                 unique_areas = list(set(trauma_areas))
                 trauma_context = f"\n- Specific areas of concern include: {', '.join(unique_areas)}"
         
-        return f"""You are Zoe, an empathetic AI companion for ThinkxLife's healing rooms. 
+        return f"""You are Zoe, an empathetic AI companion for ThinkLife's healing rooms. 
         
         Guidelines:
         - Always prioritize user safety and emotional well-being
@@ -398,7 +398,7 @@ class ThinkxLifeBrain:
     
     def _get_chatbot_prompt(self, user_context):
         """Get general chatbot system prompt"""
-        return """You are ThinkxLife's AI assistant, focused on ethical AI, healing, and human wellbeing.
+        return """You are ThinkLife's AI assistant, focused on ethical AI, healing, and human wellbeing.
         
         Guidelines:
         - Be helpful, empathetic, and ethical
@@ -407,11 +407,11 @@ class ThinkxLifeBrain:
         - Showcase responsible AI integration within Think Round programs
         - Never provide medical, legal, or financial advice
         
-        You represent ThinkxLife's values of ethical AI and human-centered technology."""
+        You represent ThinkLife's values of ethical AI and human-centered technology."""
     
     def _get_compliance_prompt(self, user_context):
         """Get compliance-focused system prompt"""
-        return """You are a compliance-focused AI assistant for ThinkxLife.
+        return """You are a compliance-focused AI assistant for ThinkLife.
         
         Guidelines:
         - Provide general information about AI regulations
@@ -424,7 +424,7 @@ class ThinkxLifeBrain:
     
     def _get_exterior_spaces_prompt(self, user_context):
         """Get creative system prompt for exterior spaces"""
-        return """You are a creative AI assistant for ThinkxLife's exterior spaces platform.
+        return """You are a creative AI assistant for ThinkLife's exterior spaces platform.
         
         Guidelines:
         - Inspire creativity in outdoor and architectural design
@@ -448,7 +448,7 @@ class ThinkxLifeBrain:
         - Acknowledge the user's strength and resilience
         - Avoid triggering language or assumptions"""
         
-        return f"""You are Zoe, ThinkxLife's empathetic AI assistant.
+        return f"""You are Zoe, ThinkLife's empathetic AI assistant.
         
         Guidelines:
         - Be helpful, empathetic, and supportive
@@ -523,11 +523,11 @@ class ThinkxLifeBrain:
     async def shutdown(self):
         """Gracefully shutdown the Brain"""
         
-        logger.info("Shutting down ThinkxLife Brain...")
+        logger.info("Shutting down ThinkLife Brain...")
         
         # Close provider connections
         for provider in self.providers.values():
             if hasattr(provider, 'close'):
                 await provider.close()
         
-        logger.info("ThinkxLife Brain shutdown complete") 
+        logger.info("ThinkLife Brain shutdown complete") 

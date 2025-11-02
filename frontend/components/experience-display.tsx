@@ -45,29 +45,101 @@ export default function ExperienceDisplay({
     }
 
     try {
+      // Create abort controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
       const response = await fetch(
-        `/api/experiences?limit=${limit}&offset=${newOffset}`
-      );
+        `/api/experiences?limit=${limit}&offset=${newOffset}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal
+        }
+      ).catch((fetchError) => {
+        // Handle network errors (CORS, offline, timeout, etc.)
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          console.warn('Request timeout fetching experiences');
+          throw new Error('Request timeout: Server took too long to respond');
+        }
+        console.warn('Network error fetching experiences:', fetchError);
+        throw new Error('Network error: Unable to connect to server');
+      });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch experiences');
+        // Try to get error message from response
+        let errorMessage = `Failed to fetch experiences (${response.status})`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          // Response is not JSON, use status text
+          errorMessage = response.statusText || errorMessage;
+        }
+        
+        // Don't throw, just log and return empty
+        console.warn('API response error:', errorMessage);
+        if (newOffset === 0) {
+          setExperiences([]);
+          setTotalCount(0);
+          setHasMore(false);
+        }
+        if (showLoading) {
+          toast.error('Unable to load experiences');
+        }
+        return;
       }
 
-      const data = await response.json();
+      const data = await response.json().catch((jsonError) => {
+        // Invalid JSON response
+        console.error('Invalid JSON response:', jsonError);
+        throw new Error('Invalid response from server');
+      });
+
+      // Handle case where API returns error in data
+      if (data.error) {
+        console.warn('API error in response:', data.error);
+        // Still set empty arrays to show "no experiences" message
+        setExperiences([]);
+        setTotalCount(0);
+        setHasMore(false);
+        if (showLoading) {
+          toast.error('Unable to load experiences');
+        }
+        return;
+      }
+
+      // Ensure experiences array exists
+      const experiencesList = Array.isArray(data.experiences) ? data.experiences : [];
 
       if (newOffset === 0) {
-        setExperiences(data.experiences);
+        setExperiences(experiencesList);
       } else {
-        setExperiences(prev => [...prev, ...data.experiences]);
+        setExperiences(prev => [...prev, ...experiencesList]);
       }
 
-      setTotalCount(data.totalCount);
-      setHasMore(data.hasMore);
+      setTotalCount(data.totalCount || 0);
+      setHasMore(data.hasMore || false);
       setOffset(newOffset);
 
-    } catch (error) {
-      console.error('Error fetching experiences:', error);
-      toast.error('Failed to load experiences');
+    } catch (error: any) {
+      // Catch all errors and handle gracefully
+      console.warn('Error fetching experiences:', error?.message || error);
+      // Set empty state on error to prevent crashes
+      if (newOffset === 0) {
+        setExperiences([]);
+        setTotalCount(0);
+        setHasMore(false);
+      }
+      // Only show toast on initial load, not on "load more"
+      if (showLoading) {
+        toast.error('Failed to load experiences. Please try again later.');
+      }
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -127,7 +199,7 @@ export default function ExperienceDisplay({
       <div className="text-center py-12">
         <Quote className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <h3 className="text-xl font-semibold text-gray-700 mb-2">No Experiences Yet</h3>
-        <p className="text-gray-500">Be the first to share your experience with ThinkxLife!</p>
+        <p className="text-gray-500">Be the first to share your experience with ThinkLife!</p>
       </div>
     );
   }

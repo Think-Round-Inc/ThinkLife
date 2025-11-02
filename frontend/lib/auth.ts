@@ -43,7 +43,7 @@ export const authOptions: NextAuthOptions = {
         if (credentials.email === "guest@guest.com" && credentials.password === "ThinxLife") {
           return {
             id: "guest-user",
-            email: "guest@thinkxlife.com",
+            email: "guest@thinklife.com",
             name: "Guest User",
           }
         }
@@ -80,7 +80,7 @@ export const authOptions: NextAuthOptions = {
           if (credentials.email === "guest@guest.com" && credentials.password === "ThinxLife") {
             return {
               id: "guest-user",
-              email: "guest@thinkxlife.com",
+              email: "guest@thinklife.com",
               name: "Guest User (DB Fallback)",
             }
           }

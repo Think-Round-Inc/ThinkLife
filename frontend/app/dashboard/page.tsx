@@ -1243,14 +1243,14 @@ export default function ModernDashboard() {
               <Card>
                 <CardHeader>
                   <CardTitle>Documentation</CardTitle>
-                  <CardDescription>Learn how to use ThinkxLife effectively</CardDescription>
+                  <CardDescription>Learn how to use ThinkLife effectively</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     <Button 
                       variant="outline" 
                       className="w-full justify-start"
-                      onClick={() => window.open('https://docs.thinkxlife.com/user-guide', '_blank')}
+                      onClick={() => window.open('https://docs.thinklife.com/user-guide', '_blank')}
                     >
                       <FileText className="w-4 h-4 mr-2" />
                       User Guide
@@ -1258,7 +1258,7 @@ export default function ModernDashboard() {
                     <Button 
                       variant="outline" 
                       className="w-full justify-start"
-                      onClick={() => window.open('https://docs.thinkxlife.com/faq', '_blank')}
+                      onClick={() => window.open('https://docs.thinklife.com/faq', '_blank')}
                     >
                       <HelpCircle className="w-4 h-4 mr-2" />
                       FAQ
@@ -1266,7 +1266,7 @@ export default function ModernDashboard() {
                     <Button 
                       variant="outline" 
                       className="w-full justify-start"
-                      onClick={() => window.open('https://docs.thinkxlife.com/api', '_blank')}
+                      onClick={() => window.open('https://docs.thinklife.com/api', '_blank')}
                     >
                       <Activity className="w-4 h-4 mr-2" />
                       API Documentation
@@ -1284,7 +1284,7 @@ export default function ModernDashboard() {
                   <div className="space-y-3">
                     <Button 
                       className="w-full justify-start bg-blue-600 hover:bg-blue-700"
-                      onClick={() => window.open('mailto:support@thinkxlife.com?subject=Support Request', '_blank')}
+                      onClick={() => window.open('mailto:support@thinklife.com?subject=Support Request', '_blank')}
                     >
                       <Mail className="w-4 h-4 mr-2" />
                       Email Support

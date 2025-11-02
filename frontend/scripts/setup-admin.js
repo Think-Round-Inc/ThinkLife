@@ -10,7 +10,7 @@ async function setupAdmin() {
   if (!process.env.DATABASE_URL) {
     console.error('❌ DATABASE_URL environment variable is not set!');
     console.log('\n📝 Please create a .env.local file with:');
-    console.log('DATABASE_URL="postgresql://username:password@localhost:5432/thinkxlife?schema=public"');
+    console.log('DATABASE_URL="postgresql://username:password@localhost:5432/thinklife?schema=public"');
     console.log('\nOr for a quick SQLite setup:');
     console.log('DATABASE_URL="file:./dev.db"');
     process.exit(1);

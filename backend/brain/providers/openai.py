@@ -1,5 +1,5 @@
 """
-OpenAI Provider - Optional external AI provider for ThinkxLife Brain
+OpenAI Provider - Optional external AI provider for ThinkLife Brain
 """
 
 import asyncio

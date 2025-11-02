@@ -1,8 +1,8 @@
 """
 Zoe AI Companion - Core Module
 
-Zoe is ThinkxLife's empathetic AI companion designed with trauma-informed care principles.
-This module integrates with the ThinkxLife Brain system and manages conversation context.
+Zoe is ThinkLife's empathetic AI companion designed with trauma-informed care principles.
+This module integrates with the ThinkLife Brain system and manages conversation context.
 """
 
 import logging
@@ -10,17 +10,17 @@ import uuid
 from typing import Dict, Optional, Any, List
 from datetime import datetime
 
-# ThinkxLife Brain imports
+# ThinkLife Brain imports
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from brain.brain_core import ThinkxLifeBrain
+    from brain.brain_core import ThinkLifeBrain
     from brain.context_manager import ContextManager
 except ImportError as e:
     logging.warning(f"Brain imports failed: {e}")
-    ThinkxLifeBrain = None
+    ThinkLifeBrain = None
     ContextManager = None
 
 # Zoe imports
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 class ZoeCore:
     """
-    Zoe AI Companion - Main interface that connects to ThinkxLife Brain
+    Zoe AI Companion - Main interface that connects to ThinkLife Brain
     
     This class handles:
     - Personality-based responses
@@ -43,12 +43,12 @@ class ZoeCore:
     Enhanced with full conversation management for contextual responses.
     """
     
-    def __init__(self, brain_instance: Optional[ThinkxLifeBrain] = None):
+    def __init__(self, brain_instance: Optional[ThinkLifeBrain] = None):
         self.brain = brain_instance
         self.personality = ZoePersonality()
         
         # Initialize conversation manager
-        # Note: ThinkxLifeBrain doesn't have a context_manager attribute
+        # Note: ThinkLifeBrain doesn't have a context_manager attribute
         # So we create a new ContextManager instance for conversation management
         if ContextManager:
             brain_context_manager = ContextManager()

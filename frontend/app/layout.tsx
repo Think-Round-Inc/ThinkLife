@@ -9,12 +9,12 @@ import AuthSessionProvider from "@/components/providers/session-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ThinkxLife",
+  title: "ThinkLife",
   description: "",
   icons: {
-    icon: "/ThinkxLife.png", // main favicon
-    shortcut: "/ThinkxLife.png", // <link rel="shortcut icon">
-    apple: "/ThinkxLife.png", // for iOS homescreen
+    icon: "/ThinkLife.png", // main favicon
+    shortcut: "/ThinkLife.png", // <link rel="shortcut icon">
+    apple: "/ThinkLife.png", // for iOS homescreen
   },
   generator: "v0.dev",
 };

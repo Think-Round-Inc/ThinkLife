@@ -146,7 +146,7 @@ export default function ModernLanding() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Why Choose ThinkxLife?
+              Why Choose ThinkLife?
             </h2>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
               Everything we do is guided by fundamental principles that put human wellbeing first.
@@ -260,7 +260,7 @@ export default function ModernLanding() {
               How It Works
             </h2>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-              Getting started with ThinkxLife is simple and personalized to your journey.
+              Getting started with ThinkLife is simple and personalized to your journey.
             </p>
           </div>
 
@@ -446,7 +446,7 @@ export default function ModernLanding() {
           <div className="space-y-6">
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                What makes ThinkxLife different from other AI platforms?
+                What makes ThinkLife different from other AI platforms?
               </h3>
               <p className="text-gray-600">
                 We prioritize trauma-informed care and human-centered design in everything we do. Our AI systems 
@@ -476,7 +476,7 @@ export default function ModernLanding() {
 
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                Is ThinkxLife free to use?
+                Is ThinkLife free to use?
               </h3>
               <p className="text-gray-600">
                 Yes, our core services are free to use. We're a nonprofit organization committed to making 

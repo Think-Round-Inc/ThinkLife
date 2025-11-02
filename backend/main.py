@@ -1,7 +1,7 @@
 """
-ThinkxLife Backend with Brain Integration
+ThinkLife Backend with Brain Integration
 
-This is the main FastAPI application that integrates the ThinkxLife Brain
+This is the main FastAPI application that integrates the ThinkLife Brain
 system with existing chatbot functionality.
 """
 
@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import Brain system
-from brain import ThinkxLifeBrain
+from brain import ThinkLifeBrain
 
 # Import Zoe AI Companion
 from zoe import ZoeCore
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
     global brain_instance, zoe_instance
     
     # Startup
-    logger.info("Starting ThinkxLife Backend with Brain and Zoe integration...")
+    logger.info("Starting ThinkLife Backend with Brain and Zoe integration...")
     
     # Initialize Brain
     brain_config = {
@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
         }
     }
     
-    brain_instance = ThinkxLifeBrain(brain_config)
+    brain_instance = ThinkLifeBrain(brain_config)
     logger.info("Brain system initialized")
     
     # Initialize Zoe with Brain integration
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    logger.info("Shutting down ThinkxLife Backend...")
+    logger.info("Shutting down ThinkLife Backend...")
     if brain_instance:
         await brain_instance.shutdown()
     logger.info("Shutdown complete")
@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="ThinkxLife Backend with Brain",
+    title="ThinkLife Backend with Brain",
     description="AI-powered backend with centralized Brain orchestration",
     version="1.0.0",
     lifespan=lifespan
@@ -85,7 +85,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "https://thinkxlife.vercel.app", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "https://thinklife.vercel.app", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -119,7 +119,7 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 
-def get_brain() -> ThinkxLifeBrain:
+def get_brain() -> ThinkLifeBrain:
     """Get Brain instance"""
     if not brain_instance:
         raise HTTPException(status_code=503, detail="Brain system not initialized")
@@ -142,10 +142,10 @@ async def brain_options():
 @app.post("/api/brain", response_model=APIBrainResponse)
 async def process_brain_request(
     request: APIBrainRequest,
-    brain: ThinkxLifeBrain = Depends(get_brain)
+    brain: ThinkLifeBrain = Depends(get_brain)
 ) -> APIBrainResponse:
     """
-    Process a request through the ThinkxLife Brain system
+    Process a request through the ThinkLife Brain system
     
     This is the main endpoint that all frontend applications use
     to interact with AI capabilities.
@@ -191,7 +191,7 @@ async def process_brain_request(
 
 
 @app.get("/api/brain/health", response_model=HealthResponse)
-async def get_brain_health(brain: ThinkxLifeBrain = Depends(get_brain)) -> HealthResponse:
+async def get_brain_health(brain: ThinkLifeBrain = Depends(get_brain)) -> HealthResponse:
     """Get Brain system health status"""
     try:
         health_status = await brain.get_health_status()
@@ -208,7 +208,7 @@ async def get_brain_health(brain: ThinkxLifeBrain = Depends(get_brain)) -> Healt
 
 
 @app.get("/api/brain/analytics")
-async def get_brain_analytics(brain: ThinkxLifeBrain = Depends(get_brain)):
+async def get_brain_analytics(brain: ThinkLifeBrain = Depends(get_brain)):
     """Get Brain system analytics"""
     try:
         analytics = await brain.get_analytics()
@@ -352,7 +352,7 @@ async def get_zoe_health(zoe: ZoeCore = Depends(get_zoe)):
 async def get_session_analytics(
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
-    brain: ThinkxLifeBrain = Depends(get_brain),
+    brain: ThinkLifeBrain = Depends(get_brain),
     zoe: ZoeCore = Depends(get_zoe)
 ):
     """Get session analytics and statistics"""
@@ -486,7 +486,7 @@ async def legacy_chat_endpoint(
 async def create_application_endpoint(
     request: Dict[str, Any],
     application: str,
-    brain: ThinkxLifeBrain = Depends(get_brain)
+    brain: ThinkLifeBrain = Depends(get_brain)
 ):
     """Generic handler for application-specific endpoints"""
     api_request = APIBrainRequest(
@@ -504,7 +504,7 @@ async def create_application_endpoint(
 @app.post("/api/healing-rooms")
 async def healing_rooms_endpoint(
     request: Dict[str, Any],
-    brain: ThinkxLifeBrain = Depends(get_brain)
+    brain: ThinkLifeBrain = Depends(get_brain)
 ):
     """Healing rooms specific endpoint"""
     return await create_application_endpoint(request, "healing-rooms", brain)
@@ -513,7 +513,7 @@ async def healing_rooms_endpoint(
 @app.post("/api/inside-our-ai")
 async def inside_our_ai_endpoint(
     request: Dict[str, Any],
-    brain: ThinkxLifeBrain = Depends(get_brain)
+    brain: ThinkLifeBrain = Depends(get_brain)
 ):
     """Inside our AI specific endpoint"""
     return await create_application_endpoint(request, "inside-our-ai", brain)
@@ -522,7 +522,7 @@ async def inside_our_ai_endpoint(
 @app.post("/api/compliance")
 async def compliance_endpoint(
     request: Dict[str, Any],
-    brain: ThinkxLifeBrain = Depends(get_brain)
+    brain: ThinkLifeBrain = Depends(get_brain)
 ):
     """Compliance specific endpoint"""
     return await create_application_endpoint(request, "compliance", brain)
@@ -531,7 +531,7 @@ async def compliance_endpoint(
 @app.post("/api/exterior-spaces")
 async def exterior_spaces_endpoint(
     request: Dict[str, Any],
-    brain: ThinkxLifeBrain = Depends(get_brain)
+    brain: ThinkLifeBrain = Depends(get_brain)
 ):
     """Exterior spaces specific endpoint"""
     return await create_application_endpoint(request, "exterior-spaces", brain)
@@ -543,7 +543,7 @@ async def health_check():
     """Basic health check"""
     return {
         "status": "healthy",
-        "service": "ThinkxLife Backend with Brain and Zoe",
+        "service": "ThinkLife Backend with Brain and Zoe",
         "timestamp": datetime.now().isoformat(),
         "brain_available": brain_instance is not None,
         "zoe_available": zoe_instance is not None
@@ -555,7 +555,7 @@ async def health_check():
 async def root():
     """Root endpoint"""
     return {
-        "message": "ThinkxLife Backend with Brain and Zoe Integration",
+        "message": "ThinkLife Backend with Brain and Zoe Integration",
         "version": "1.0.0",
         "brain_enabled": brain_instance is not None,
         "zoe_enabled": zoe_instance is not None,
