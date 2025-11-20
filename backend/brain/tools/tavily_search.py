@@ -76,8 +76,7 @@ class TavilySearchTool(BaseTool):
         search_depth: str = "basic",
         include_answer: bool = True,
         include_raw_content: bool = False,
-        **kwargs
-    ) -> ToolResult:
+        **kwargs: Any) -> ToolResult:
         """
         Execute web search using Tavily
         

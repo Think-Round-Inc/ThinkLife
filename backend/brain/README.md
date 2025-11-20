@@ -31,8 +31,7 @@ brain/
 │   ├── __init__.py
 │   ├── openai.py           # OpenAI provider
 │   ├── gemini.py           # Google Gemini provider
-│   ├── anthropic.py        # Anthropic provider
-│   └── grok.py             # Grok provider
+│   └── anthropic.py        # Anthropic provider
 ├── docs/                    # Documentation
 │   ├── ARCHITECTURE.md      # System architecture guide
 │   └── CREATING_AGENTS.md   # Agent development guide

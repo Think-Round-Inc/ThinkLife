@@ -23,7 +23,6 @@ from .interfaces import IAgent, IAgentPlugin, AgentMetadata, AgentConfig, AgentR
 from .spec_validator import SpecificationValidator, get_spec_validator, ValidationResult
 from .workflow_engine import WorkflowEngine, get_workflow_engine, OrchestrationResult
 from .data_sources import (
-    DataSourceManager, get_data_source_manager,
     DataSourceRegistry, get_data_source_registry
 )
 from .security_manager import SecurityManager
@@ -72,7 +71,6 @@ __all__ = [
     "ValidationResult",
     "WorkflowEngine",
     "OrchestrationResult",
-    "DataSourceManager",
     "DataSourceRegistry",
     "SecurityManager",
     
@@ -91,7 +89,6 @@ __all__ = [
     # Utility functions
     "get_spec_validator",
     "get_workflow_engine",
-    "get_data_source_manager",
     "get_data_source_registry",
     "get_tool_registry"
 ] 

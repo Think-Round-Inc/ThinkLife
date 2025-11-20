@@ -23,7 +23,6 @@ class ProviderType(str, Enum):
     OPENAI = "openai"
     GEMINI = "gemini"
     ANTHROPIC = "anthropic"
-    GROK = "grok"
 
 
 @dataclass
@@ -260,16 +259,6 @@ class GeminiProviderConfig(ProviderConfig):
 
 
 @dataclass
-class GrokProviderConfig(ProviderConfig):
-    """Grok (xAI) provider configuration"""
-    api_key: str = ""
-    model: str = "grok-beta"
-    max_tokens: int = 2000
-    temperature: float = 0.7
-    stream: bool = False
-
-
-@dataclass
 class SecurityConfig:
     """Security configuration"""
     rate_limiting: Dict[str, Any] = field(default_factory=lambda: {
@@ -410,7 +399,7 @@ class DataSourceSpec:
 @dataclass
 class ProviderSpec:
     """Specification for LLM provider configuration that agents want to use"""
-    provider_type: str  # "openai", "gemini", "anthropic", "grok"
+    provider_type: str  # "openai", "gemini", "anthropic"
     model: Optional[str] = None
     temperature: float = 0.7
     max_tokens: int = 2000

@@ -106,14 +106,14 @@ Data source 0: External db_path not found: agents/missing/chroma.sqlite3
 ### 2. Provider ✓
 
 **Checks**:
-- Provider type is available (openai, gemini, anthropic, grok)
+- Provider type is available (openai, gemini, anthropic)
 - Temperature is reasonable (0.0-2.0)
 - max_tokens is within limits
 - Model is specified
 
 **Example Error**:
 ```
-Provider 'invalid_provider' not available. Available: ['openai', 'gemini', 'anthropic', 'grok']
+Provider 'invalid_provider' not available. Available: ['openai', 'gemini', 'anthropic']
 ```
 
 ### 3. Tools ✓

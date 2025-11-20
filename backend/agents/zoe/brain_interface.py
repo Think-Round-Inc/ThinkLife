@@ -10,10 +10,10 @@ from datetime import datetime
 
 # Import Brain's shared knowledge system
 try:
-    from brain.data_sources import get_data_source_manager
+    from brain.data_sources import get_data_source_registry
 except ImportError:
     # Fallback if brain not available
-    get_data_source_manager = None
+    get_data_source_registry = None
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class ZoeBrainInterface:
         self.personality_style = "empathetic_companion"
         
         # Access Brain's shared knowledge system
-        self.data_manager = get_data_source_manager() if get_data_source_manager else None
+        self.data_registry = get_data_source_registry() if get_data_source_registry else None
         
     async def initialize(self) -> bool:
         """Initialize Zoe's Brain interface service"""
@@ -574,7 +574,7 @@ class ZoeBrainInterface:
     
     async def _get_shared_knowledge(self, message: str, application: str, user_context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Get relevant knowledge from Brain's shared data sources"""
-        if not self.data_manager:
+        if not self.data_registry:
             return []
         
         try:
@@ -588,14 +588,14 @@ class ZoeBrainInterface:
             # For healing-rooms, prioritize trauma resources
             if application == "healing-rooms":
                 # Look for trauma support resources
-                trauma_knowledge = await self.data_manager.query_best(
+                trauma_knowledge = await self.data_registry.query_best(
                     query=f"trauma support resources healing {message}",
                     context={**context, "type": "trauma_support"},
                     max_results=2
                 )
                 
                 # Also get general knowledge
-                general_knowledge = await self.data_manager.query_best(
+                general_knowledge = await self.data_registry.query_best(
                     query=message,
                     context=context,
                     max_results=1
@@ -605,7 +605,7 @@ class ZoeBrainInterface:
             
             else:
                 # For other applications, get general knowledge
-                return await self.data_manager.query_best(
+                return await self.data_registry.query_best(
                     query=message,
                     context=context,
                     max_results=3

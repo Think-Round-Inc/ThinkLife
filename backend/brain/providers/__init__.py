@@ -6,8 +6,16 @@ __all__ = []
 
 # Provider registry
 try:
-    from .provider_registry import ProviderRegistry, get_provider_registry
-    __all__.extend(["ProviderRegistry", "get_provider_registry"])
+    from .provider_registry import (
+        ProviderRegistry, 
+        get_provider_registry,
+        check_provider_spec_availability
+    )
+    __all__.extend([
+        "ProviderRegistry", 
+        "get_provider_registry",
+        "check_provider_spec_availability"
+    ])
 except ImportError as e:
     print(f"Warning: Provider registry not available: {e}")
 
@@ -31,12 +39,6 @@ try:
 except ImportError as e:
     print(f"Warning: Anthropic provider not available: {e}")
 
-try:
-    from .grok import GrokProvider, create_grok_provider
-    __all__.extend(["GrokProvider", "create_grok_provider"])
-except ImportError as e:
-    print(f"Warning: Grok provider not available: {e}")
-
 # Provider factory for easy instantiation
 def create_provider(provider_type: str, config: dict = None):
     """Factory function to create providers with default settings"""
@@ -47,7 +49,6 @@ def create_provider(provider_type: str, config: dict = None):
         "openai": (OpenAIProvider, create_openai_provider),
         "gemini": (GeminiProvider, create_gemini_provider), 
         "anthropic": (AnthropicProvider, create_anthropic_provider),
-        "grok": (GrokProvider, create_grok_provider),
     }
     
     if provider_type not in provider_map:
@@ -68,7 +69,6 @@ def get_available_providers():
         "OpenAIProvider": "openai",
         "GeminiProvider": "gemini", 
         "AnthropicProvider": "anthropic",
-        "GrokProvider": "grok"
     }
     
     for class_name, provider_type in provider_map.items():

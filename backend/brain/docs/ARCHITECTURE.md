@@ -148,8 +148,7 @@ backend/
 │   ├── providers/                # AI provider implementations
 │   │   ├── openai.py
 │   │   ├── gemini.py
-│   │   ├── anthropic.py
-│   │   └── grok.py
+│   │   └── anthropic.py
 │   └── docs/
 │       ├── ARCHITECTURE.md       # This file
 │       └── CREATING_AGENTS.md    # Agent development guide

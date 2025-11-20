@@ -21,7 +21,7 @@ from .types import (
 )
 from .spec_validator import SpecificationValidator, get_spec_validator
 from .workflow_engine import WorkflowEngine, get_workflow_engine, OrchestrationResult
-from .data_sources import DataSourceManager, get_data_source_manager
+from .data_sources import get_data_source_registry
 from .security_manager import SecurityManager
 from .providers import create_provider, get_available_providers
 
@@ -59,7 +59,7 @@ class ThinkxLifeBrain:
         # Core components
         self.spec_validator: Optional[SpecificationValidator] = None
         self.workflow_engine: Optional[WorkflowEngine] = None
-        self.data_source_manager: Optional[DataSourceManager] = None
+        self.data_source_registry = None
         self.security_manager: SecurityManager = SecurityManager(self.config.security)
         
         # Analytics and monitoring
@@ -87,9 +87,9 @@ class ThinkxLifeBrain:
             self.workflow_engine = get_workflow_engine()
             await self.workflow_engine.initialize()
             
-            # Initialize data source manager
-            self.data_source_manager = get_data_source_manager()
-            await self.data_source_manager.initialize(vectorstore)
+            # Initialize data source registry
+            self.data_source_registry = get_data_source_registry()
+            await self.data_source_registry.initialize()
             
             self._initialized = True
             
@@ -371,8 +371,8 @@ class ThinkxLifeBrain:
         
         # Check data source health
         data_source_health = {}
-        if self.data_source_manager:
-            data_source_health = await self.data_source_manager.health_check_all()
+        if self.data_source_registry:
+            data_source_health = await self.data_source_registry.health_check_all()
             if any(status.get("status") == "unhealthy" for status in data_source_health.values()):
                 overall_status = "degraded"
         
@@ -404,8 +404,8 @@ class ThinkxLifeBrain:
         
         # Get data source information
         data_source_info = {}
-        if self.data_source_manager:
-            sources_info = self.data_source_manager.list_sources()
+        if self.data_source_registry:
+            sources_info = self.data_source_registry.list_sources()
             for source_id, info in sources_info.items():
                 data_source_info[source_id] = {
                     "type": info["type"],
@@ -448,15 +448,15 @@ class ThinkxLifeBrain:
                 
                 # Handle vector DB or other data sources
                 elif source_type in [DataSourceType.VECTOR_DB, DataSourceType.FILE_SYSTEM]:
-                    if self.data_source_manager:
+                    if self.data_source_registry:
                         # Check if this is an external agent-specific data source
                         if spec.config and spec.config.get("db_path"):
                             # Register external data source if needed
-                            source_id = await self.data_source_manager.get_or_create_external_source(spec.config)
+                            source_id = await self.data_source_registry.get_or_create_external_source(spec.config)
                             
                             if source_id:
                                 # Query the specific external source
-                                external_source = self.data_source_manager.data_sources.get(source_id)
+                                external_source = self.data_source_registry.get_source(source_id)
                                 if external_source:
                                     query = spec.query or request.message
                                     results = await external_source.query(
@@ -469,9 +469,9 @@ class ThinkxLifeBrain:
                             else:
                                 logger.warning(f"Failed to register external data source from spec: {spec.config}")
                         else:
-                            # Use default data source manager
+                            # Use default data source registry
                             query = spec.query or request.message
-                            results = await self.data_source_manager.query_best(
+                            results = await self.data_source_registry.query_best(
                                 query,
                                 context=spec.filters,
                                 k=spec.limit
@@ -626,8 +626,8 @@ class ThinkxLifeBrain:
         if self.workflow_engine:
             await self.workflow_engine.shutdown()
         
-        if self.data_source_manager:
-            await self.data_source_manager.shutdown()
+        if self.data_source_registry:
+            await self.data_source_registry.shutdown()
         
         logger.info("ThinkxLife Brain shutdown complete")
 
