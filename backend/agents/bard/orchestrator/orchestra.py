@@ -20,7 +20,7 @@ except ImportError as e:
 
 
 # ======================== Initialize Brain and LLM ================================
-brain = ThinkxLifeBrain()
+brain = CortexFlow()
 
 load_dotenv()
 

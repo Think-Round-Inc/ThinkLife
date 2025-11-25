@@ -1,12 +1,18 @@
 """
-Zoe Agent Plugin - Simple connector between Brain and Zoe services
-This plugin acts as a lightweight bridge, delegating all logic to Zoe
+Zoe Agent Plugin - Lightweight connector
+
+This plugin:
+1. Contains LLM request specs (provider, model, params, tools, data sources)
+2. Invokes cortex for agent request processing
+3. Returns results
+
+All domain logic (personality, prompts, conversation) stays in agents/zoe/
 """
 
 import logging
 from typing import Dict, Any, List, Optional
 
-from brain.interfaces import (
+from brain.specs import (
     IAgent, IAgentPlugin, IConversationalAgent,
     AgentMetadata, AgentConfig, AgentResponse, BrainRequest,
     AgentCapability
@@ -17,15 +23,59 @@ logger = logging.getLogger(__name__)
 
 class ZoeAgent(IConversationalAgent):
     """
-    Lightweight Zoe Agent Plugin - Simple connector to Zoe services
-    All domain logic is handled by Zoe, this just bridges the connection
+    Lightweight Zoe Plugin
+    
+    Contains:
+    - LLM request specifications (provider, model, params)
+    - Data source specifications
+    - Tool specifications
+    
+    Invokes CortexFlow for processing
     """
 
     def __init__(self, config: AgentConfig):
         self.config = config
         self.agent_id = config.agent_id
         self._initialized = False
-        self.zoe_interface = None
+        
+        # LLM Request Specifications
+        self.llm_specs = {
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "temperature": 0.8,
+            "max_tokens": 1500,
+            "params": {
+                "top_p": 0.9,
+                "presence_penalty": 0.3,
+                "frequency_penalty": 0.2
+            }
+        }
+        
+        # Data source specifications
+        self.data_sources = [
+            {
+                "type": "conversation_history",
+                "enabled": True,
+                "limit": 10
+            },
+            {
+                "type": "vector_db",
+                "enabled": True,
+                "limit": 3,
+                "filters": {"trauma_informed": True}
+            }
+        ]
+        
+        # Tool specifications (none for now)
+        self.tools = []
+        
+        # Processing specifications
+        self.processing = {
+            "execution_strategy": "adaptive",
+            "reasoning_threshold": 0.75,
+            "max_iterations": 2,
+            "timeout_seconds": 30.0
+        }
         
     @property
     def metadata(self) -> AgentMetadata:
@@ -33,7 +83,7 @@ class ZoeAgent(IConversationalAgent):
         return AgentMetadata(
             name="Zoe AI Companion",
             version="2.0.0",
-            description="ThinkxLife's empathetic AI companion with trauma-informed care",
+            description="Empathetic AI companion with trauma-informed care",
             capabilities=[
                 AgentCapability.CONVERSATIONAL,
                 AgentCapability.EDUCATIONAL
@@ -48,88 +98,105 @@ class ZoeAgent(IConversationalAgent):
         )
 
     async def initialize(self, config: AgentConfig) -> bool:
-        """Initialize Zoe agent by connecting to Zoe services"""
+        """Initialize plugin"""
         if self._initialized:
             return True
             
         try:
-            logger.info("Initializing Zoe Agent connector")
-            
-            # Import Zoe components
-            from agents.zoe import ZoeCore
-            from agents.zoe.brain_interface import ZoeBrainInterface
-            
-            # Initialize ZoeCore
-            zoe_core = ZoeCore()
-            
-            # Create Zoe's Brain interface
-            self.zoe_interface = ZoeBrainInterface(zoe_core)
-            
-            # Initialize interface
-            if await self.zoe_interface.initialize():
-                self._initialized = True
-                logger.info("Zoe Agent connector initialized successfully")
-                return True
-            else:
-                logger.error("Failed to initialize Zoe interface")
-                return False
+            logger.info("Initializing Zoe Agent Plugin")
+            self._initialized = True
+            logger.info("Zoe Agent Plugin initialized")
+            return True
                 
         except Exception as e:
-            logger.error(f"Error initializing Zoe Agent connector: {str(e)}")
+            logger.error(f"Error initializing Zoe Agent Plugin: {str(e)}")
             return False
 
+    async def create_execution_specs(self, request: BrainRequest) -> Dict[str, Any]:
+        """
+        Create LLM execution specs from stored configurations
+        
+        Returns dict with:
+        - provider specs
+        - data source specs  
+        - tool specs
+        - processing specs
+        """
+        return {
+            "llm": self.llm_specs,
+            "data_sources": self.data_sources,
+            "tools": self.tools,
+            "processing": self.processing,
+            "metadata": {
+                "agent_type": "zoe",
+                "application": request.application.value,
+                "session_id": request.user_context.session_id
+            }
+        }
+    
     async def process_request(self, request: BrainRequest) -> AgentResponse:
-        """Process request by delegating to Zoe interface"""
-        if not self._initialized or not self.zoe_interface:
+        """
+        Process request by invoking cortex with LLM specs
+        
+        Simple flow:
+        1. Get execution specs (from stored config)
+        2. Invoke cortex for processing
+        3. Return response
+        """
+        if not self._initialized:
             return AgentResponse(
                 success=False,
-                content="Zoe is not available right now. Please try again later.",
-                metadata={"error": "Agent not initialized"}
+                content="I'm not quite ready yet. Please try again in a moment.",
+                metadata={"error": "Plugin not initialized"}
             )
         
         try:
-            # Delegate to Zoe's Brain interface
-            zoe_response = await self.zoe_interface.process_brain_request(request)
+            # Get execution specs
+            execution_specs = await self.create_execution_specs(request)
             
-            # Convert to AgentResponse
+            # Invoke cortex for agent request processing
+            from brain import CortexFlow
+            cortex = CortexFlow()
+            
+            # Let cortex handle everything
+            result = await cortex.process_agent_request(
+                request=request,
+                agent=self,
+                execution_specs=execution_specs
+            )
+            
+            # Return as AgentResponse
             return AgentResponse(
-                success=zoe_response.get("success", False),
-                content=zoe_response.get("response", ""),
-                metadata=zoe_response.get("metadata", {}),
-                processing_time=zoe_response.get("processing_time", 0.0),
-                session_id=zoe_response.get("session_id")
+                success=result.get("success", False),
+                content=result.get("content", ""),
+                metadata=result.get("metadata", {}),
+                processing_time=result.get("processing_time", 0.0),
+                session_id=result.get("session_id")
             )
             
         except Exception as e:
-            logger.error(f"Error in Zoe Agent connector: {str(e)}")
+            logger.error(f"Error in Zoe Agent Plugin: {str(e)}")
             return AgentResponse(
                 success=False,
-                content="I'm experiencing some technical difficulties. Please try again.",
+                content="I'm experiencing some technical challenges. Please try again.",
                 metadata={"error": str(e)}
             )
 
     async def health_check(self) -> Dict[str, Any]:
-        """Health check via Zoe interface"""
-        base_health = {
+        """Health check for plugin"""
+        return {
             "status": "healthy" if self._initialized else "not_initialized",
             "agent_id": self.agent_id,
-            "initialized": self._initialized
+            "agent_name": "Zoe",
+            "initialized": self._initialized,
+            "llm_provider": self.llm_specs["provider"],
+            "llm_model": self.llm_specs["model"]
         }
-        
-        if self.zoe_interface:
-            zoe_health = await self.zoe_interface.health_check()
-            base_health.update(zoe_health)
-        
-        return base_health
 
     async def shutdown(self) -> None:
-        """Shutdown agent connector"""
-        if self.zoe_interface:
-            await self.zoe_interface.shutdown()
-        
-        self.zoe_interface = None
+        """Shutdown plugin"""
         self._initialized = False
-        logger.info("Zoe Agent connector shutdown complete")
+        logger.info("Zoe Agent Plugin shutdown complete")
 
     async def can_handle_request(self, request: BrainRequest) -> float:
         """Return confidence score for handling this request"""
@@ -143,24 +210,19 @@ class ZoeAgent(IConversationalAgent):
         else:
             return 0.0
 
-    # IConversationalAgent methods - delegate to Zoe
+    # IConversationalAgent methods - handled by cortex/agents/zoe
     async def get_conversation_history(self, session_id: str) -> List[Dict[str, Any]]:
-        """Get conversation history via Zoe interface"""
-        if self.zoe_interface:
-            return await self.zoe_interface.get_conversation_history(session_id)
+        """Get conversation history (handled by cortex)"""
+        # Cortex manages conversation via agents/zoe
         return []
 
     async def clear_conversation(self, session_id: str) -> bool:
-        """Clear conversation via Zoe interface"""
-        if self.zoe_interface:
-            return await self.zoe_interface.clear_conversation(session_id)
-        return False
+        """Clear conversation (handled by cortex)"""
+        return True
 
     async def update_context(self, session_id: str, context: Dict[str, Any]) -> bool:
-        """Update context via Zoe interface"""
-        if self.zoe_interface:
-            return await self.zoe_interface.update_context(session_id, context)
-        return False
+        """Update context (handled by cortex)"""
+        return True
 
 
 class ZoeAgentPlugin(IAgentPlugin):

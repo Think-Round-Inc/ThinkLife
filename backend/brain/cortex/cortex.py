@@ -12,18 +12,18 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 from dotenv import load_dotenv
 
-from .interfaces import BrainRequest, BrainResponse, IAgent
-from .types import (
+from ..specs import (
+    BrainRequest, BrainResponse, IAgent,
     BrainConfig, BrainAnalytics, PluginInfo, WorkflowExecution, 
     DataSourceInfo, ApplicationType, PluginStatus, WorkflowType,
     AgentExecutionSpec, DataSourceSpec, ProviderSpec, ToolSpec, ProcessingSpec,
-    DataSourceType
+    DataSourceType, ExecutionPlan
 )
-from .spec_validator import SpecificationValidator, get_spec_validator
-from .workflow_engine import WorkflowEngine, get_workflow_engine, OrchestrationResult
-from .data_sources import get_data_source_registry
-from .security_manager import SecurityManager
-from .providers import create_provider, get_available_providers
+from .workflow_engine import WorkflowEngine, get_workflow_engine, WorkflowStep, WorkflowStatus
+from .reasoning_engine import ReasoningEngine, get_reasoning_engine
+from ..data_sources import get_data_source_registry
+from ..guardrails import SecurityManager
+from ..providers import create_provider, get_available_providers
 
 # Load environment variables
 load_dotenv()
@@ -31,11 +31,16 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-class ThinkxLifeBrain:
+class CortexFlow:
     """
-    ThinkxLife AI Brain that orchestrates agents through a plugin architecture
+    CortexFlow - Two-Phase Execution System
+    
+    Phase 1: Planning - Agent specs → Optional reasoning → Execution plan
+    Phase 2: Execution - Workflow engine executes the plan
     
     Key Features:
+    - Two-phase execution (planning → execution)
+    - Optional reasoning engine for optimization
     - Plugin-based agent system with automatic discovery
     - LangGraph workflow engine for standardized execution
     - Real-time analytics and monitoring
@@ -56,8 +61,8 @@ class ThinkxLifeBrain:
             return
         
 
-        # Core components
-        self.spec_validator: Optional[SpecificationValidator] = None
+        # Core components  
+        self.reasoning_engine: Optional[ReasoningEngine] = None
         self.workflow_engine: Optional[WorkflowEngine] = None
         self.data_source_registry = None
         self.security_manager: SecurityManager = SecurityManager(self.config.security)
@@ -79,11 +84,11 @@ class ThinkxLifeBrain:
         logger.info("Initializing ThinkxLife Brain components...")
         
         try:
-            # Initialize specification validator
-            self.spec_validator = get_spec_validator()
-            await self.spec_validator.initialize(self.config.__dict__ if hasattr(self.config, '__dict__') else {})
+            # Initialize reasoning engine (LLM-powered decision making)
+            self.reasoning_engine = get_reasoning_engine()
+            await self.reasoning_engine.initialize()
             
-            # Initialize workflow engine (LangGraph-based orchestration)
+            # Initialize workflow engine (industrial-grade orchestration)
             self.workflow_engine = get_workflow_engine()
             await self.workflow_engine.initialize()
             
@@ -128,27 +133,6 @@ class ThinkxLifeBrain:
         
         try:
             logger.info(f"Executing agent request {request_id} with agent specifications")
-            
-            # Sub-node 0: Validate specifications
-            if self.spec_validator:
-                validation_result = await self.spec_validator.validate_execution_spec(specifications)
-                if not validation_result.valid:
-                    logger.error(f"Specification validation failed: {validation_result.errors}")
-                    return {
-                        "success": False,
-                        "content": "Invalid execution specification",
-                        "error": "; ".join(validation_result.errors),
-                        "metadata": {
-                            "request_id": request_id,
-                            "validation_errors": validation_result.errors
-                        }
-                    }
-                
-                # Log warnings and suggestions
-                if validation_result.warnings:
-                    logger.warning(f"Specification warnings: {validation_result.warnings}")
-                if validation_result.suggestions:
-                    logger.info(f"Specification suggestions: {validation_result.suggestions}")
             
             # Sub-node 1: Query specified data sources
             context_data = await self._query_specified_data_sources(
@@ -420,7 +404,351 @@ class ThinkxLifeBrain:
             "timestamp": datetime.now().isoformat()
         }
     
-    # Legacy methods removed - agents now connect via plugins
+    # TWO-PHASE EXECUTION: PLANNING + EXECUTION
+    
+    async def process_agent_request(
+        self,
+        request: BrainRequest,
+        agent: IAgent,
+        execution_specs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Process agent request using plugin specs
+        
+        Flow:
+        1. Load agent's core (e.g., ZoeCore from agents/zoe/)
+        2. Build prompts using core
+        3. Execute LLM with two-phase
+        4. Post-process with core
+        5. Update conversation with core
+        6. Return response
+        """
+        start_time = time.time()
+        session_id = request.user_context.session_id
+        
+        try:
+            # Load agent core (e.g., ZoeCore)
+            agent_type = execution_specs.get("metadata", {}).get("agent_type", "unknown")
+            logger.info(f"Processing request for agent: {agent_type}")
+            
+            if agent_type == "zoe":
+                from agents.zoe import ZoeCore
+                agent_core = ZoeCore()
+                
+                # Prepare context using ZoeCore
+                context = agent_core.prepare_context(
+                    message=request.message,
+                    user_context={
+                        "user_id": request.user_context.user_id,
+                        "ace_score": getattr(request.user_context, 'ace_score', None)
+                    },
+                    session_id=session_id
+                )
+                
+                # Get conversation history
+                history = agent_core.get_conversation_history(session_id)
+                
+                # Build system prompt
+                system_prompt = agent_core.build_system_prompt(context)
+                
+                # Build messages for LLM
+                messages = [{"role": "system", "content": system_prompt}]
+                
+                # Add history
+                for msg in history[-10:]:
+                    messages.append({
+                        "role": msg.get("role", "user"),
+                        "content": msg.get("content", "")
+                    })
+                
+                # Add current message
+                messages.append({"role": "user", "content": request.message})
+                
+                # Execute LLM (simplified for now - will use two-phase later)
+                llm_specs = execution_specs.get("llm", {})
+                provider = create_provider(
+                    llm_specs.get("provider", "openai"),
+                    {
+                        "model": llm_specs.get("model", "gpt-4o-mini"),
+                        "temperature": llm_specs.get("temperature", 0.7),
+                        "max_tokens": llm_specs.get("max_tokens", 1500),
+                        **llm_specs.get("params", {})
+                    }
+                )
+                await provider.initialize()
+                
+                # Call LLM
+                llm_result = await provider.generate_response(messages=messages)
+                llm_response = llm_result.get("content", "")
+                
+                if llm_response:
+                    # Post-process with ZoeCore
+                    final_response = agent_core.post_process_response(llm_response, context)
+                    
+                    # Update conversation
+                    agent_core.update_conversation(session_id, request.message, final_response)
+                    
+                    return {
+                        "success": True,
+                        "content": final_response,
+                        "session_id": session_id,
+                        "metadata": {
+                            "agent": agent_type,
+                            "processing_time": time.time() - start_time,
+                            "context": context
+                        },
+                        "processing_time": time.time() - start_time
+                    }
+                else:
+                    # Use fallback
+                    fallback = agent_core.get_fallback_response()
+                    return {
+                        "success": False,
+                        "content": fallback,
+                        "session_id": session_id,
+                        "metadata": {"error": "No LLM response"},
+                        "processing_time": time.time() - start_time
+                    }
+            
+            else:
+                # Unknown agent type
+                return {
+                    "success": False,
+                    "content": "Unknown agent type",
+                    "metadata": {"error": f"Agent type {agent_type} not supported"},
+                    "processing_time": time.time() - start_time
+                }
+                
+        except Exception as e:
+            logger.error(f"Error processing agent request: {str(e)}")
+            
+            # Try to get error response from agent core
+            try:
+                if agent_type == "zoe":
+                    from agents.zoe import ZoeCore
+                    error_response = ZoeCore().get_error_response()
+                else:
+                    error_response = "An error occurred processing your request."
+            except:
+                error_response = "An error occurred processing your request."
+            
+            return {
+                "success": False,
+                "content": error_response,
+                "metadata": {"error": str(e)},
+                "processing_time": time.time() - start_time
+            }
+    
+    async def create_execution_plan(
+        self,
+        agent_specs: AgentExecutionSpec,
+        request: BrainRequest
+    ) -> ExecutionPlan:
+        """
+        PHASE 1: PLANNING
+        
+        Create an execution plan from agent specifications.
+        Optionally uses reasoning engine to optimize the plan.
+        
+        Returns:
+            ExecutionPlan with optimized specs and metadata
+        """
+        logger.info(f"Planning phase started - strategy: {agent_specs.processing.execution_strategy}")
+        
+        strategy = agent_specs.processing.execution_strategy
+        
+        if strategy == "direct":
+            # Skip reasoning - use agent specs directly
+            return self._create_direct_plan(agent_specs)
+        
+        elif strategy == "reasoned":
+            # Always use reasoning
+            return await self._create_reasoned_plan(agent_specs, request)
+        
+        elif strategy == "adaptive":
+            # Use reasoning, but fallback to agent specs if confidence low
+            return await self._create_adaptive_plan(agent_specs, request)
+        
+        else:
+            logger.warning(f"Unknown execution strategy: {strategy}, using direct")
+            return self._create_direct_plan(agent_specs)
+    
+    def _create_direct_plan(self, agent_specs: AgentExecutionSpec) -> ExecutionPlan:
+        """Create execution plan without reasoning"""
+        logger.info("Creating direct execution plan (no reasoning)")
+        
+        return ExecutionPlan(
+            original_specs=agent_specs,
+            optimized_specs=agent_specs,
+            reasoning_applied=False,
+            confidence=1.0,
+            reasoning_notes={"strategy": "direct", "message": "Skipped reasoning as requested"},
+            estimated_cost=self._estimate_cost(agent_specs),
+            estimated_latency=self._estimate_latency(agent_specs)
+        )
+    
+    async def _create_reasoned_plan(
+        self,
+        agent_specs: AgentExecutionSpec,
+        request: BrainRequest
+    ) -> ExecutionPlan:
+        """Create execution plan with reasoning (always optimize)"""
+        logger.info("Creating reasoned execution plan (with reasoning)")
+        
+        try:
+            # Get reasoning suggestions
+            reasoning_result = await self.reasoning_engine.optimize_execution_specs(
+                original_specs=agent_specs,
+                request=request,
+                context=self._get_execution_context()
+            )
+            
+            optimized_specs = reasoning_result.get("optimized_specs", agent_specs)
+            confidence = reasoning_result.get("confidence", 0.8)
+            
+            return ExecutionPlan(
+                original_specs=agent_specs,
+                optimized_specs=optimized_specs,
+                reasoning_applied=True,
+                confidence=confidence,
+                reasoning_notes=reasoning_result.get("notes", {}),
+                estimated_cost=reasoning_result.get("estimated_cost", 0.0),
+                estimated_latency=reasoning_result.get("estimated_latency", 0.0)
+            )
+        
+        except Exception as e:
+            logger.error(f"Reasoning failed, falling back to direct plan: {e}")
+            return self._create_direct_plan(agent_specs)
+    
+    async def _create_adaptive_plan(
+        self,
+        agent_specs: AgentExecutionSpec,
+        request: BrainRequest
+    ) -> ExecutionPlan:
+        """Create adaptive plan with reasoning fallback"""
+        logger.info("Creating adaptive execution plan (reasoning with confidence threshold)")
+        
+        try:
+            # Get reasoning suggestions
+            reasoning_result = await self.reasoning_engine.optimize_execution_specs(
+                original_specs=agent_specs,
+                request=request,
+                context=self._get_execution_context()
+            )
+            
+            confidence = reasoning_result.get("confidence", 0.0)
+            threshold = agent_specs.processing.reasoning_threshold
+            
+            if confidence >= threshold:
+                # High confidence - use reasoning suggestions
+                logger.info(f"Using reasoning suggestions (confidence: {confidence} >= {threshold})")
+                
+                return ExecutionPlan(
+                    original_specs=agent_specs,
+                    optimized_specs=reasoning_result["optimized_specs"],
+                    reasoning_applied=True,
+                    confidence=confidence,
+                    reasoning_notes=reasoning_result.get("notes", {}),
+                    estimated_cost=reasoning_result.get("estimated_cost", 0.0),
+                    estimated_latency=reasoning_result.get("estimated_latency", 0.0)
+                )
+            else:
+                # Low confidence - stick with agent specs
+                logger.info(f"Reasoning confidence too low ({confidence} < {threshold}), using agent specs")
+                
+                return ExecutionPlan(
+                    original_specs=agent_specs,
+                    optimized_specs=agent_specs,
+                    reasoning_applied=False,
+                    confidence=1.0,
+                    reasoning_notes={
+                        "skipped": f"confidence {confidence} < {threshold}",
+                        "reasoning_suggestions": reasoning_result.get("notes", {})
+                    },
+                    estimated_cost=self._estimate_cost(agent_specs),
+                    estimated_latency=self._estimate_latency(agent_specs)
+                )
+        
+        except Exception as e:
+            logger.error(f"Adaptive planning failed, falling back to direct plan: {e}")
+            return self._create_direct_plan(agent_specs)
+    
+    def _get_execution_context(self) -> Dict[str, Any]:
+        """Get current execution context for reasoning"""
+        return {
+            "available_providers": get_available_providers(),
+            "available_tools": list(self.tool_registry.tools.keys()) if hasattr(self, 'tool_registry') else [],
+            "data_sources": self.data_source_registry.list_sources() if self.data_source_registry else {},
+            "system_load": {
+                "total_requests": self.analytics.total_requests,
+                "average_response_time": self.analytics.average_response_time
+            }
+        }
+    
+    def _estimate_cost(self, specs: AgentExecutionSpec) -> float:
+        """Estimate execution cost based on specs"""
+        # Placeholder - would implement actual cost estimation
+        cost = 0.0
+        
+        if specs.provider:
+            # Rough cost estimate based on tokens
+            estimated_tokens = specs.provider.max_tokens
+            cost += estimated_tokens * 0.00001  # $0.01 per 1K tokens (placeholder)
+        
+        # Add data source costs
+        cost += len(specs.data_sources) * 0.001
+        
+        # Add tool costs
+        cost += len(specs.tools) * 0.005
+        
+        return round(cost, 4)
+    
+    def _estimate_latency(self, specs: AgentExecutionSpec) -> float:
+        """Estimate execution latency based on specs"""
+        # Placeholder - would implement actual latency estimation
+        latency = 0.5  # Base latency
+        
+        # Add data source latency
+        latency += len(specs.data_sources) * 0.3
+        
+        # Add tool latency
+        latency += len(specs.tools) * 0.5
+        
+        # Add provider latency
+        if specs.provider:
+            latency += 1.5
+        
+        return round(latency, 2)
+    
+    async def execute_plan(
+        self,
+        plan: ExecutionPlan,
+        request: BrainRequest,
+        agent: IAgent
+    ) -> Dict[str, Any]:
+        """
+        PHASE 2: EXECUTION
+        
+        Execute the execution plan via workflow engine.
+        """
+        logger.info(f"Execution phase started - reasoning_applied: {plan.reasoning_applied}")
+        
+        try:
+            # Execute via workflow engine
+            result = await self.workflow_engine.execute_plan(
+                plan=plan,
+                request=request
+            )
+            
+            # Add planning metadata to result
+            result["execution_plan"] = plan.to_dict()
+            
+            return result
+        
+        except Exception as e:
+            logger.error(f"Execution failed: {e}")
+            raise
+    
     
     async def _query_specified_data_sources(
         self,
@@ -620,7 +948,7 @@ class ThinkxLifeBrain:
     
     async def shutdown(self) -> None:
         """Gracefully shutdown the Brain"""
-        logger.info("Shutting down Generalized Brain...")
+        logger.info("Shutting down CortexFlow...")
         
         # Shutdown components
         if self.workflow_engine:
@@ -629,6 +957,6 @@ class ThinkxLifeBrain:
         if self.data_source_registry:
             await self.data_source_registry.shutdown()
         
-        logger.info("ThinkxLife Brain shutdown complete")
+        logger.info("CortexFlow shutdown complete")
 
 

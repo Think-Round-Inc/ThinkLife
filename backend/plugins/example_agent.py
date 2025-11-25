@@ -9,12 +9,10 @@ import time
 from typing import Dict, Any, List
 from datetime import datetime
 
-from brain.interfaces import (
-    IAgent, IAgentPlugin, IConversationalAgent, ITraumaInformedAgent,
+from brain.specs import (
+    IAgent, IAgentPlugin, IConversationalAgent, ISafetyAwareAgent,
     AgentMetadata, AgentConfig, AgentResponse, BrainRequest, 
-    AgentCapability, UserContext
-)
-from brain.types import (
+    AgentCapability, UserContext,
     AgentExecutionSpec, DataSourceSpec, ProviderSpec, ToolSpec, ProcessingSpec,
     DataSourceType
 )
@@ -22,7 +20,7 @@ from brain.types import (
 logger = logging.getLogger(__name__)
 
 
-class ExampleAgent(IAgent, IConversationalAgent, ITraumaInformedAgent):
+class ExampleAgent(IAgent, IConversationalAgent, ISafetyAwareAgent):
     """
     Example agent implementation showing all the key interfaces
     This agent provides basic conversational capabilities with trauma-informed features
@@ -397,7 +395,7 @@ class ExampleAgent(IAgent, IConversationalAgent, ITraumaInformedAgent):
             logger.error(f"Error updating context for {session_id}: {str(e)}")
             return False
     
-    # ITraumaInformedAgent implementation
+    # ISafetyAwareAgent implementation
     
     async def assess_safety(self, request: BrainRequest) -> Dict[str, Any]:
         """Assess request for trauma triggers and safety concerns"""

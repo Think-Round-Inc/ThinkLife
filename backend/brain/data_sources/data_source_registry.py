@@ -8,7 +8,7 @@ import logging
 import os
 from typing import Dict, List, Any, Optional, Set, Tuple
 
-from ..types import DataSourceSpec, DataSourceType
+from ..specs import DataSourceSpec, DataSourceType
 from ..interfaces import IDataSource
 from .base_data_source import DataSourceConfig
 from .vector_db import VectorDataSource

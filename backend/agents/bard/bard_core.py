@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-brain = ThinkxLifeBrain()
+brain = CortexFlow()
 
 load_dotenv()
 if brain.config["providers"]["gemini"]["enabled"]:

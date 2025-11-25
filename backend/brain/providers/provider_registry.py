@@ -7,7 +7,7 @@ import logging
 import os
 from typing import Dict, List, Any, Optional, Set, Tuple
 
-from ..types import ModelInfo, ProviderInfo, ProviderSpec
+from ..specs import ModelInfo, ProviderInfo, ProviderSpec
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ class ProviderRegistry:
         if library:
             try:
                 __import__(library)
-            except ImportError:
+        except ImportError:
                 return False
         
         # Check API key

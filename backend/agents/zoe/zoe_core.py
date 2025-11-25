@@ -35,32 +35,197 @@ logger = logging.getLogger(__name__)
 
 class ZoeCore:
     """
-    Zoe AI Companion - Main interface that connects to ThinkxLife Brain
+    Zoe AI Companion - The "mouth" of Zoe
     
-    This class handles:
-    - Personality-based responses
-    - Integration with Brain module for LLM calls
+    This class handles everything EXCEPT LLM calls:
+    - Trauma-informed personality and prompts
     - Conversation context and session management
-    - Trauma-informed interaction patterns
+    - Response post-processing and safety checks
+    - Empathetic communication patterns
     
-    Enhanced with full conversation management for contextual responses.
+    LLM calls (the "brain/thinking") happen via:
+    Plugin → Cortex for processing
+    
+    Think of it as:
+    - ZoeCore = Personality, memory, safety
+    - Plugin = Connector to trigger LLM thinking
     """
     
-    def __init__(self, brain_instance: Optional[ThinkxLifeBrain] = None):
-        self.brain = brain_instance
+    def __init__(self):
         self.personality = ZoePersonality()
+        self.conversation_manager = ZoeConversationManager(None)
         
-        # Initialize conversation manager
-        # Create a new ConversationManager instance for conversation management
-        if ConversationManager:
-            brain_conversation_manager = ConversationManager()
-        else:
-            brain_conversation_manager = None
+        # Zoe's characteristics
+        self.empathy_level = "high"
+        self.trauma_awareness = True
         
-        self.conversation_manager = ZoeConversationManager(brain_conversation_manager)
-        
-        logger.info("Zoe AI Companion initialized with Brain integration and conversation management")
+        logger.info("ZoeCore initialized - personality and conversation management ready")
     
+    def prepare_context(self, message: str, user_context: Dict[str, Any], session_id: str) -> Dict[str, Any]:
+        """
+        Prepare context for building prompts
+        
+        Returns dict with user info, conversation history, safety requirements
+        """
+        # Get conversation history
+        history = self.conversation_manager.get_session(session_id)
+        
+        context = {
+            "user_id": user_context.get("user_id", "anonymous"),
+            "session_id": session_id,
+            "empathy_level": self.empathy_level,
+            "trauma_aware": self.trauma_awareness,
+            "conversation_length": len(history.get("messages", [])) if history else 0
+        }
+        
+        # Add ACE score if available
+        ace_score = user_context.get("ace_score")
+        if ace_score:
+            context["ace_score"] = ace_score
+            context["high_trauma_risk"] = ace_score >= 4
+        
+        return context
+    
+    def build_system_prompt(self, context: Dict[str, Any]) -> str:
+        """
+        Build Zoe's trauma-informed system prompt based on context
+        
+        This is Zoe's "personality" that guides her responses
+        """
+        return self._build_system_prompt(context)
+    
+    def _build_system_prompt(self, context: Dict[str, Any]) -> str:
+        """Build Zoe's trauma-informed system prompt"""
+        base_prompt = """You are Zoe, a compassionate AI companion for ThinkxLife.
+
+Core Principles:
+- Trauma-Informed Care: Always prioritize safety and empowerment
+- Empathetic Communication: Validate feelings and provide support
+- Educational Support: Help users understand AI and technology
+- Healing-Focused: Support users on their healing journey
+
+Guidelines:
+- Use warm, supportive language
+- Acknowledge emotions before problem-solving
+- Respect boundaries and pace
+- Provide resources when appropriate
+- Never judge or minimize experiences
+- Use phrases like "I hear you", "That makes sense", "Thank you for sharing"
+
+You speak with kindness, patience, and genuine care for each person's wellbeing."""
+        
+        # Add trauma-specific guidance for high-risk users
+        if context.get("high_trauma_risk"):
+            base_prompt += """
+
+IMPORTANT: This user has a high ACE score (trauma history). Please:
+- Be extra gentle and patient
+- Avoid triggering language
+- Offer support resources
+- Acknowledge their strength
+- Move at their pace"""
+        
+        return base_prompt
+    
+    def post_process_response(
+        self,
+        llm_response: str,
+        context: Dict[str, Any]
+    ) -> str:
+        """
+        Post-process LLM response with Zoe's safety checks
+        
+        Ensures:
+        - No minimizing language
+        - Trauma-informed tone
+        - Appropriate boundaries
+        """
+        response = llm_response
+        
+        # Check for minimizing language
+        minimizing_phrases = ["just", "simply", "only", "it's not that bad", "calm down"]
+        for phrase in minimizing_phrases:
+            if phrase.lower() in response.lower():
+                logger.warning(f"Zoe: Detected potentially minimizing language: {phrase}")
+        
+        # Add empathetic closing if needed
+        if len(response) > 200 and not any(word in response.lower() for word in ["here", "support", "help"]):
+            response += "\n\nI'm here if you need anything else. 💙"
+        
+        return response
+    
+    def update_conversation(
+        self,
+        session_id: str,
+        user_message: str,
+        assistant_response: str
+    ):
+        """Update conversation history"""
+        self.conversation_manager.add_message(
+            session_id=session_id,
+            role="user",
+            content=user_message
+        )
+        
+        self.conversation_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            content=assistant_response
+        )
+    
+    def get_conversation_history(self, session_id: str) -> List[Dict[str, Any]]:
+        """Get conversation history for session"""
+        session_data = self.conversation_manager.get_session(session_id)
+        if session_data:
+            return session_data.get("messages", [])
+        return []
+    
+    def clear_conversation(self, session_id: str) -> bool:
+        """Clear conversation history"""
+        self.conversation_manager.clear_session(session_id)
+        return True
+    
+    def update_context(self, session_id: str, context: Dict[str, Any]) -> bool:
+        """Update session context"""
+        session_data = self.conversation_manager.get_session(session_id)
+        if session_data:
+            session_data.update(context)
+            return True
+        return False
+    
+    def get_fallback_response(self) -> str:
+        """Get fallback response when LLM fails"""
+        return "I'm having a moment of difficulty connecting my thoughts. Could we try that again? I really want to be here for you. 💙"
+    
+    def get_error_response(self) -> str:
+        """Get empathetic error response"""
+        return "I'm experiencing some technical challenges right now. Please bear with me and try again in a moment. You're important to me, and I want to give you my best. 💙"
+    
+    def health_check(self) -> Dict[str, Any]:
+        """Health check for ZoeCore"""
+        session_count = 0
+        if hasattr(self.conversation_manager, 'sessions'):
+            session_count = len(self.conversation_manager.sessions)
+        
+        return {
+            "status": "healthy",
+            "personality": "trauma-informed",
+            "empathy_level": self.empathy_level,
+            "trauma_awareness": self.trauma_awareness,
+            "active_sessions": session_count
+        }
+    
+    def shutdown(self):
+        """Shutdown ZoeCore"""
+        if hasattr(self.conversation_manager, 'clear_all'):
+            self.conversation_manager.clear_all()
+        logger.info("ZoeCore shutdown complete")
+    
+    # ==========================================
+    # Legacy method - kept for backward compatibility
+    # This uses the OLD brain instance directly
+    # NEW code should use the plugin → cortex flow
+    # ==========================================
     async def process_message(
         self,
         message: str,

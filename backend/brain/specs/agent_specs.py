@@ -1,15 +1,12 @@
 """
-Standard interfaces and contracts for ThinkxLife Brain agents and plugins
-Defines the contracts that agents must implement to work with Brain
+Agent specifications, interfaces, and types
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, AsyncGenerator
+from typing import Dict, List, Optional, Any, AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-
-from .types import BrainRequest, BrainResponse, UserContext
 
 
 class AgentCapability(str, Enum):
@@ -21,13 +18,13 @@ class AgentCapability(str, Enum):
     TOOL_USE = "tool_use"
 
 
-class DataSourceType(str, Enum):
-    """Types of data sources"""
-    VECTOR_DB = "vector_db"
-    FILE_SYSTEM = "file_system"
-    WEB_SEARCH = "web_search"
-    MEMORY = "memory"
-    CONVERSATION_HISTORY = "conversation_history"
+class PluginStatus(str, Enum):
+    """Plugin status types"""
+    REGISTERED = "registered"
+    INITIALIZED = "initialized"
+    ACTIVE = "active"
+    ERROR = "error"
+    DISABLED = "disabled"
 
 
 @dataclass
@@ -61,40 +58,54 @@ class AgentResponse:
     session_id: Optional[str] = None
 
 
-# ============================================================================
-# Core Interfaces
-# ============================================================================
+@dataclass
+class PluginInfo:
+    """Information about a registered plugin"""
+    plugin_id: str
+    name: str
+    version: str
+    description: str
+    status: PluginStatus
+    capabilities: List[str] = field(default_factory=list)
+    supported_applications: List[str] = field(default_factory=list)
+    author: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+    last_used: Optional[datetime] = None
+    usage_count: int = 0
+    error_count: int = 0
 
 
-class IDataSource(ABC):
-    """Interface for data sources that Brain can use"""
+@dataclass
+class AgentExecutionSpec:
+    """
+    Complete specification from agent to Brain about how to process the request
     
-    @abstractmethod
-    async def initialize(self, config: Dict[str, Any]) -> bool:
-        """Initialize the data source"""
-        pass
+    This is what agents pass to Brain to specify:
+    - Which data sources to use
+    - Which provider and configuration
+    - Which tools to apply
+    - How to process the request
+    """
+    data_sources: List[Any] = field(default_factory=list)  # List[DataSourceSpec]
+    provider: Optional[Any] = None  # Optional[ProviderSpec]
+    tools: List[Any] = field(default_factory=list)  # List[ToolSpec]
+    processing: Any = None  # ProcessingSpec
     
-    @abstractmethod
-    async def query(self, query: str, context: Dict[str, Any] = None, **kwargs) -> List[Dict[str, Any]]:
-        """Query the data source"""
-        pass
+    # Optional agent-specific metadata
+    agent_metadata: Dict[str, Any] = field(default_factory=dict)
     
-    @abstractmethod
-    async def health_check(self) -> Dict[str, Any]:
-        """Check data source health"""
-        pass
-    
-    @abstractmethod
-    async def close(self) -> None:
-        """Clean up resources"""
-        pass
-    
-    @property
-    @abstractmethod
-    def source_type(self) -> DataSourceType:
-        """Return the type of this data source"""
-        pass
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary"""
+        return {
+            "data_sources": [ds.to_dict() if hasattr(ds, 'to_dict') else ds for ds in self.data_sources],
+            "provider": self.provider.to_dict() if hasattr(self.provider, 'to_dict') else self.provider,
+            "tools": [tool.to_dict() if hasattr(tool, 'to_dict') else tool for tool in self.tools],
+            "processing": self.processing.to_dict() if hasattr(self.processing, 'to_dict') else self.processing,
+            "agent_metadata": self.agent_metadata
+        }
 
+
+# Interfaces
 
 class IAgent(ABC):
     """
@@ -116,7 +127,7 @@ class IAgent(ABC):
         pass
     
     @abstractmethod
-    async def create_execution_specs(self, request: BrainRequest) -> 'AgentExecutionSpec':
+    async def create_execution_specs(self, request: Any) -> AgentExecutionSpec:  # request: BrainRequest
         """
         Agent specifies how Brain should process the request:
         - Which data sources to query
@@ -129,7 +140,7 @@ class IAgent(ABC):
         pass
     
     @abstractmethod
-    async def process_request(self, request: BrainRequest) -> AgentResponse:
+    async def process_request(self, request: Any) -> AgentResponse:  # request: BrainRequest
         """
         Process a user request and return response
         
@@ -147,7 +158,7 @@ class IAgent(ABC):
         """Clean shutdown of agent resources"""
         pass
     
-    async def can_handle_request(self, request: BrainRequest) -> float:
+    async def can_handle_request(self, request: Any) -> float:  # request: BrainRequest
         """
         Return confidence score (0.0-1.0) for handling this request
         Default implementation checks supported applications
@@ -186,7 +197,7 @@ class ISafetyAwareAgent(IAgent):
     """
     
     @abstractmethod
-    async def assess_content_safety(self, request: BrainRequest) -> Dict[str, Any]:
+    async def assess_content_safety(self, request: Any) -> Dict[str, Any]:  # request: BrainRequest
         """
         Assess request for safety concerns
         
@@ -205,7 +216,7 @@ class IStreamingAgent(IAgent):
     """Interface for agents that support streaming responses"""
     
     @abstractmethod
-    async def stream_response(self, request: BrainRequest) -> AsyncGenerator[str, None]:
+    async def stream_response(self, request: Any) -> AsyncGenerator[str, None]:  # request: BrainRequest
         """Stream response chunks as they're generated"""
         pass
 
@@ -230,3 +241,4 @@ class IAgentPlugin(ABC):
     def validate_config(self, config: AgentConfig) -> bool:
         """Validate configuration before agent creation"""
         pass
+

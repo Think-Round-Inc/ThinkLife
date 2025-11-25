@@ -13,19 +13,20 @@ Version 2.0 Features:
 """
 
 # Import main brain system
-from .brain_core import ThinkxLifeBrain
-from .types import (
+from .cortex import CortexFlow
+from .specs import (
     BrainRequest, BrainResponse, BrainConfig,
     AgentExecutionSpec, DataSourceSpec, ProviderSpec, ToolSpec, ProcessingSpec,
-    DataSourceType, ModelInfo, ProviderInfo
+    DataSourceType, ModelInfo, ProviderInfo,
+    IAgent, IAgentPlugin, IConversationalAgent, ISafetyAwareAgent, IStreamingAgent,
+    IDataSource, AgentMetadata, AgentConfig, AgentResponse, AgentCapability
 )
-from .interfaces import IAgent, IAgentPlugin, AgentMetadata, AgentConfig, AgentResponse
-from .spec_validator import SpecificationValidator, get_spec_validator, ValidationResult
-from .workflow_engine import WorkflowEngine, get_workflow_engine, OrchestrationResult
+from .cortex import ReasoningEngine, get_reasoning_engine, WorkflowEngine, get_workflow_engine, WorkflowStep, WorkflowStatus, WorkflowExecution
+from .specs import ExecutionPlan
 from .data_sources import (
     DataSourceRegistry, get_data_source_registry
 )
-from .security_manager import SecurityManager
+from .guardrails import SecurityManager
 from .tools import (
     get_tool_registry, ToolRegistry, BaseTool, ToolResult,
     TavilySearchTool, DocumentSummarizerTool,
@@ -38,9 +39,8 @@ from . import providers
 __version__ = "2.0.0"
     
 __all__ = [
-    # Main Brain class
-    "ThinkxLifeBrain",
-    "GeneralizedBrain",
+    # Main Cortex class
+    "CortexFlow",
     
     # Core types
     "BrainRequest", 
@@ -59,18 +59,25 @@ __all__ = [
     "ModelInfo",
     "ProviderInfo",
     
-    # Plugin system
+    # Plugin system & Interfaces
     "IAgent",
     "IAgentPlugin", 
+    "IConversationalAgent",
+    "ISafetyAwareAgent",
+    "IStreamingAgent",
+    "IDataSource",
     "AgentMetadata",
     "AgentConfig",
     "AgentResponse",
+    "AgentCapability",
     
-    # Management systems
-    "SpecificationValidator",
-    "ValidationResult",
+    # Core Engines
+    "ReasoningEngine",
     "WorkflowEngine",
-    "OrchestrationResult",
+    "WorkflowExecution",
+    "WorkflowStep",
+    "WorkflowStatus",
+    "ExecutionPlan",
     "DataSourceRegistry",
     "SecurityManager",
     
@@ -87,7 +94,7 @@ __all__ = [
     "providers",
     
     # Utility functions
-    "get_spec_validator",
+    "get_reasoning_engine",
     "get_workflow_engine",
     "get_data_source_registry",
     "get_tool_registry"

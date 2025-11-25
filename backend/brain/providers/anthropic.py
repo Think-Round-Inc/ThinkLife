@@ -5,7 +5,7 @@ Anthropic Provider - Integration with Anthropic Claude models
 import logging
 from typing import Dict, Any, List, Optional
 
-from ..types import ProviderSpec
+from ..specs import ProviderSpec
 from .provider_registry import check_provider_spec_availability
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,10 @@ class AnthropicProvider:
     
     async def initialize(self) -> bool:
         """Validate config and initialize Anthropic client"""
-        if not ANTHROPIC_AVAILABLE:
-            logger.error("Anthropic library not available")
-            return False
-        
+            if not ANTHROPIC_AVAILABLE:
+                logger.error("Anthropic library not available")
+                return False
+            
         # Validate with registry
         if not self._validate_config():
             return False
@@ -87,7 +87,7 @@ class AnthropicProvider:
             
             # Get system from messages if not in config
             if not system:
-                for msg in messages:
+            for msg in messages:
                     if msg.get("role") == "system":
                         system = msg["content"]
                         break
@@ -115,20 +115,20 @@ class AnthropicProvider:
                 if block.type == "tool_use"
             ]
             
-            metadata = {
-                "model": response.model,
-                "usage": response.usage.dict() if response.usage else {},
-                "stop_reason": response.stop_reason,
-                "provider": "anthropic"
-            }
-            if tool_uses:
-                metadata["tool_uses"] = tool_uses
-            
-            return {
+                metadata = {
+                    "model": response.model,
+                    "usage": response.usage.dict() if response.usage else {},
+                    "stop_reason": response.stop_reason,
+                    "provider": "anthropic"
+                }
+                if tool_uses:
+                    metadata["tool_uses"] = tool_uses
+                
+                return {
                 "content": content,
-                "metadata": metadata,
-                "success": True
-            }
+                    "metadata": metadata,
+                    "success": True
+                }
         except Exception as e:
             logger.error(f"Anthropic request failed: {e}")
             return self._error_response(str(e))
@@ -185,8 +185,8 @@ class AnthropicProvider:
         self._initialized = False
         self.client = None
         logger.info("Anthropic provider closed")
-
-
+    
+    
 def create_anthropic_provider(config: Optional[Dict[str, Any]] = None) -> AnthropicProvider:
     """Create Anthropic provider instance"""
     return AnthropicProvider(config or {})

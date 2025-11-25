@@ -5,7 +5,7 @@ OpenAI Provider - Integration with OpenAI GPT models
 import logging
 from typing import Dict, Any, List, Optional, Union
 
-from ..types import ProviderSpec
+from ..specs import ProviderSpec
 from .provider_registry import check_provider_spec_availability
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,10 @@ class OpenAIProvider:
     
     async def initialize(self) -> bool:
         """Validate config and initialize OpenAI client"""
-        if not OPENAI_AVAILABLE:
-            logger.error("OpenAI library not available")
-            return False
-        
+            if not OPENAI_AVAILABLE:
+                logger.error("OpenAI library not available")
+                return False
+            
         # Validate with registry
         if not self._validate_config():
             return False
@@ -91,25 +91,25 @@ class OpenAIProvider:
             if not response.choices:
                 return self._error_response("No response from OpenAI")
             
-            choice = response.choices[0]
-            metadata = {
-                "model": response.model,
-                "usage": response.usage.dict() if response.usage else {},
-                "finish_reason": choice.finish_reason,
-                "provider": "openai"
-            }
-            
+                choice = response.choices[0]
+                metadata = {
+                    "model": response.model,
+                    "usage": response.usage.dict() if response.usage else {},
+                    "finish_reason": choice.finish_reason,
+                    "provider": "openai"
+                }
+                
             # Add tool/function calls if present
-            if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
-                metadata["tool_calls"] = [call.dict() for call in choice.message.tool_calls]
+                if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
+                    metadata["tool_calls"] = [call.dict() for call in choice.message.tool_calls]
             elif hasattr(choice.message, 'function_call') and choice.message.function_call:
                 metadata["function_call"] = choice.message.function_call
-            
-            return {
+                
+                return {
                 "content": choice.message.content or "",
-                "metadata": metadata,
-                "success": True
-            }
+                    "metadata": metadata,
+                    "success": True
+                }
         except Exception as e:
             logger.error(f"OpenAI request failed: {e}")
             return self._error_response(str(e))
@@ -140,11 +140,11 @@ class OpenAIProvider:
     
     def _error_response(self, error: str) -> Dict[str, Any]:
         """Create standardized error response"""
-        return {
-            "content": "",
+            return {
+                "content": "",
             "metadata": {"error": error, "provider": "openai"},
-            "success": False
-        }
+                "success": False
+            }
     
     async def generate_embeddings(
         self, 
@@ -222,8 +222,8 @@ class OpenAIProvider:
         self._initialized = False
         self.client = None
         logger.info("OpenAI provider closed")
-
-
+    
+    
 def create_openai_provider(config: Optional[Dict[str, Any]] = None) -> OpenAIProvider:
     """Create OpenAI provider instance"""
     return OpenAIProvider(config or {})

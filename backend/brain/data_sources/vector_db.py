@@ -7,8 +7,7 @@ import os
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-from ..interfaces import IDataSource, DataSourceType
-from ..types import DataSourceSpec
+from ..specs import IDataSource, DataSourceType, DataSourceSpec
 from .base_data_source import DataSourceConfig
 from .data_source_registry import check_data_source_spec_availability
 

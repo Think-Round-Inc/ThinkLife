@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import Brain system
-from brain import ThinkxLifeBrain
+from brain import CortexFlow
 
 # Import Zoe AI Companion
 from agents.zoe import ZoeCore
@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
         }
     }
 
-    brain_instance = ThinkxLifeBrain(brain_config)
+    brain_instance = CortexFlow(brain_config)
     logger.info("Brain system initialized")
 
     # Initialize Zoe with Brain integration

@@ -156,4 +156,5 @@ class SecurityManager:
     
     def log_security_event(self, event_type: str, user_id: str, details: Dict[str, Any]):
         """Log security-related events"""
-        logger.warning(f"Security event: {event_type} for user {user_id}: {details}") 
+        logger.warning(f"Security event: {event_type} for user {user_id}: {details}")
+

@@ -5,7 +5,7 @@ Google Gemini Provider - Integration with Google's Gemini models
 import logging
 from typing import Dict, Any, List, Optional
 
-from ..types import ProviderSpec
+from ..specs import ProviderSpec
 from .provider_registry import check_provider_spec_availability
 
 logger = logging.getLogger(__name__)
