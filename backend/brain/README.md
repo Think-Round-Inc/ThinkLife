@@ -1,4 +1,4 @@
-# ThinkxLife Brain Architecture
+# ThinkLife Brain Architecture
 
 ## 🧠 Overview
 

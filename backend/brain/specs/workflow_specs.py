@@ -8,15 +8,54 @@ from datetime import datetime
 from enum import Enum
 
 
+class WorkflowStatus(str, Enum):
+    """Status of workflow execution"""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class WorkflowType(str, Enum):
-    """Available workflow types"""
+    """Type of workflow"""
     CONVERSATIONAL = "conversational"
-    TRAUMA_INFORMED = "trauma_informed"
-    ANALYTICAL = "analytical"
-    CREATIVE = "creative"
+    TASK_BASED = "task_based"
+    ORCHESTRATED = "orchestrated"
     CUSTOM = "custom"
 
 
+@dataclass
+class WorkflowStep:
+    """A single step in the workflow"""
+    step_id: str
+    name: str
+    action: str  # "reason", "query_data", "use_tool", "call_provider"
+    params: Dict[str, Any] = field(default_factory=dict)
+    max_retries: int = 3
+    timeout: float = 30.0
+    retry_count: int = 0
+    status: WorkflowStatus = WorkflowStatus.PENDING
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
+
+@dataclass
+class WorkflowExecution:
+    """Represents a workflow execution instance"""
+    execution_id: str
+    workflow_name: str
+    steps: List[WorkflowStep]
+    status: WorkflowStatus = WorkflowStatus.PENDING
+    context: Dict[str, Any] = field(default_factory=dict)
+    results: Dict[str, Any] = field(default_factory=dict)
+    errors: List[str] = field(default_factory=list)
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    idempotency_key: Optional[str] = None
+    
 @dataclass
 class ProcessingSpec:
     """Specification for how agents want the request to be processed"""

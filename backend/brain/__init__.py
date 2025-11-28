@@ -1,8 +1,8 @@
 """
-ThinkxLife Brain - Generalized AI Orchestration System
+ThinkLife Brain - Generalized AI Orchestration System
 
 This module contains the centralized AI Brain that manages all AI operations
-across the ThinkxLife platform using a plugin-based architecture.
+across the ThinkLife platform using a plugin-based architecture.
 
 Version 2.0 Features:
 - Plugin-based agent system with automatic discovery
@@ -29,9 +29,17 @@ from .data_sources import (
 from .guardrails import SecurityManager
 from .tools import (
     get_tool_registry, ToolRegistry, BaseTool, ToolResult,
-    TavilySearchTool, DocumentSummarizerTool,
     create_tool, get_available_tools as get_available_tool_types
 )
+# Import tools conditionally (they may not all be available)
+try:
+    from .tools import TavilySearchTool
+except ImportError:
+    TavilySearchTool = None
+try:
+    from .tools import DocumentSummarizerTool
+except ImportError:
+    DocumentSummarizerTool = None
 
 # Import providers
 from . import providers
@@ -85,8 +93,9 @@ __all__ = [
     "ToolRegistry",
     "BaseTool",
     "ToolResult",
-    "TavilySearchTool",
-    "DocumentSummarizerTool",
+    # Tools (may be None if not available)
+    # "TavilySearchTool",  # Optional - may not be available
+    # "DocumentSummarizerTool",  # Optional - may not be available
     "create_tool",
     "get_available_tool_types",
     

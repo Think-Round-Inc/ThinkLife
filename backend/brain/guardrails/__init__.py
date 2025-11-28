@@ -1,5 +1,5 @@
 """
-Guardrails module for ThinkxLife Brain
+Guardrails module for ThinkLife Brain
 Handles authentication, rate limiting, content filtering, and security validation
 """
 

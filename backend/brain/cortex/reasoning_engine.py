@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Any, List, Optional
 
 from ..specs import BrainRequest, ProviderSpec, ToolSpec, DataSourceSpec
-from ..providers import create_provider, check_provider_spec_availability
+from ..providers import create_provider, get_provider_registry
 from ..tools import get_tool_registry
 from ..data_sources import get_data_source_registry
 
@@ -26,11 +26,12 @@ class ReasoningEngine:
     def __init__(self):
         self.tool_registry = get_tool_registry()
         self.data_source_registry = get_data_source_registry()
+        self.provider_registry = get_provider_registry()
     
     async def initialize(self):
         """Initialize reasoning engine"""
-        await self.tool_registry.initialize()
-        await self.data_source_registry.initialize()
+        # Registries are simplified and don't need initialization
+        # They're ready to use immediately
         logger.info("Reasoning Engine initialized")
     
     async def decide_next_step(
@@ -43,7 +44,7 @@ class ReasoningEngine:
         """
         Use LLM to decide next step based on:
         - Current request
-        - Available tools/data sources
+        - Available tools/data sources/ providers
         - Execution history
         - Context data
         """
@@ -206,7 +207,11 @@ Based on the above, what should be the next action?
     async def _create_provider(self, provider_spec: ProviderSpec):
         """Create provider instance"""
         # Validate provider spec
-        is_valid, errors, _ = check_provider_spec_availability(provider_spec)
+        registry = get_provider_registry()
+        is_valid, errors, _ = registry.check_provider_and_model(
+            provider_spec.provider_type, 
+            provider_spec.model
+        )
         if not is_valid:
             logger.error(f"Provider spec invalid: {errors}")
             return None

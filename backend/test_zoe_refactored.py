@@ -2,7 +2,7 @@
 Test script for refactored Zoe architecture
 
 Tests the flow:
-Plugin (specs) → Cortex (processing) → ZoeCore (personality) → Response
+Plugin (specs) - Cortex (processing) - ZoeCore (personality) - Response
 """
 
 import asyncio
@@ -53,7 +53,7 @@ async def test_zoe_chat():
     
     # Process request
     print("\n4. Processing request through plugin...")
-    print("   Plugin → Cortex → ZoeCore → LLM → ZoeCore → Response")
+    print("   Plugin - Cortex - ZoeCore - LLM - ZoeCore - Response")
     
     try:
         response = await zoe_plugin.process_request(request)

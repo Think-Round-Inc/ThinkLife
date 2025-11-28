@@ -1,5 +1,5 @@
 """
-Brain Providers - AI provider implementations for ThinkxLife Brain
+Brain Providers - AI provider implementations for ThinkLife Brain
 """
 
 __all__ = []
@@ -9,12 +9,12 @@ try:
     from .provider_registry import (
         ProviderRegistry, 
         get_provider_registry,
-        check_provider_spec_availability
+        get_provider_registry
     )
     __all__.extend([
         "ProviderRegistry", 
         "get_provider_registry",
-        "check_provider_spec_availability"
+        "get_provider_registry"
     ])
 except ImportError as e:
     print(f"Warning: Provider registry not available: {e}")

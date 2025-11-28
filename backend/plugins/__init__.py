@@ -1,5 +1,5 @@
 """
-ThinkxLife Agent Plugins
+ThinkLife Agent Plugins
 
 Plugin directory for agent implementations that connect to Brain.
 Each agent in agents/ folder should have a corresponding plugin here.

@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Any, List, Optional
 
 from ..specs import ProviderSpec
-from .provider_registry import check_provider_spec_availability
+from .provider_registry import get_provider_registry
 
 logger = logging.getLogger(__name__)
 
@@ -54,19 +54,11 @@ class GeminiProvider:
     
     def _validate_config(self) -> bool:
         """Validate configuration using provider registry"""
-        excluded_keys = {"api_key", "model", "temperature", "max_tokens", "stream",
-                        "enabled", "timeout", "max_retries", "safety_settings", "generation_config"}
+        registry = get_provider_registry()
+        provider_type = "gemini"
+        model = self.config.get("model")
         
-        spec = ProviderSpec(
-            provider_type="gemini",
-            model=self.config.get("model"),
-            temperature=self.config.get("temperature"),
-            max_tokens=self.config.get("max_tokens"),
-            stream=self.config.get("stream", False),
-            custom_params={k: v for k, v in self.config.items() if k not in excluded_keys}
-        )
-        
-        is_valid, errors, _ = check_provider_spec_availability(spec)
+        is_valid, errors, _ = registry.check_provider_and_model(provider_type, model)
         if not is_valid:
             logger.error(f"Validation failed: {'; '.join(errors)}")
             return False

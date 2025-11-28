@@ -1,13 +1,13 @@
-from brain.brain_core import ThinkxLifeBrain
+from brain import CortexFlow
 import json, asyncio, re, time, statistics
 import google.generativeai as genai
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
 class TraumaAwareEvaluator:
-    def __init__(self, brain_instance: ThinkxLifeBrain = None):
+    def __init__(self, brain_instance: CortexFlow = None):
         # Use existing Brain instance or create singleton
-        self.brain = brain_instance or ThinkxLifeBrain()
+        self.brain = brain_instance or CortexFlow()
         
         # Use the main LLM provider (compatible with new Brain structure)
         # Try legacy_providers first (new structure), then fall back to providers (old structure)

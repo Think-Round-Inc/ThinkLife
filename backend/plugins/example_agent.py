@@ -60,7 +60,7 @@ class ExampleAgent(IAgent, IConversationalAgent, ISafetyAwareAgent):
             requires_auth=False,
             max_concurrent_sessions=50,
             average_response_time=1.5,
-            author="ThinkxLife Team"
+            author="ThinkLife Team"
         )
     
     async def initialize(self, config: AgentConfig) -> bool:
@@ -526,7 +526,7 @@ class ExampleAgentPlugin(IAgentPlugin):
             requires_auth=False,
             max_concurrent_sessions=50,
             average_response_time=1.5,
-            author="ThinkxLife Team"
+            author="ThinkLife Team"
         )
     
     def validate_config(self, config: AgentConfig) -> bool:

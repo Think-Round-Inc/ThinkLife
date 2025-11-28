@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ..specs import IDataSource, DataSourceType, DataSourceSpec
 from .base_data_source import DataSourceConfig
-from .data_source_registry import check_data_source_spec_availability
+from .data_source_registry import get_data_source_registry
 
 logger = logging.getLogger(__name__)
 
@@ -73,18 +73,10 @@ class VectorDataSource(IDataSource):
     
     def _validate_config(self) -> bool:
         """Validate configuration using data source registry"""
-        spec = DataSourceSpec(
-            source_type=DataSourceType.VECTOR_DB,
-            query=None,
-            filters={},
-            limit=self.config.config.get("k", 5),
-            enabled=self.config.enabled,
-            config=self.config.config
-        )
-        
-        is_valid, errors, _ = check_data_source_spec_availability(spec)
+        registry = get_data_source_registry()
+        is_valid = registry.check_data_source_available("vector_db")
         if not is_valid:
-            logger.error(f"Validation failed: {'; '.join(errors)}")
+            logger.error("Validation failed: vector_db data source not available")
             return False
         return True
     

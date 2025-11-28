@@ -33,7 +33,7 @@ export default function Footer() {
             <div className="text-center md:text-left">
               <Link href="/" className="inline-block">
                 <span className="text-lg font-bold tracking-wider text-black">
-                  Think<span className="text-gray-900">x</span>Life
+                  ThinkLife
                   <sup className="text-xs font-normal text-gray-700 ml-2 tracking-normal flex items-center">
                     from <img src="/tr_logo.png" alt="Think Round" className="w-3 h-3 ml-1" /> Think Round, Inc
                   </sup>

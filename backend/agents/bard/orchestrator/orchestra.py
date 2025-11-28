@@ -8,7 +8,7 @@ import logging
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from brain.brain_core import ThinkxLifeBrain
+from brain import CortexFlow
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

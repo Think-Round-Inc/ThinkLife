@@ -13,7 +13,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 import aiosqlite
 
-from brain.brain_core import ThinkxLifeBrain
+from brain import CortexFlow
 from agents.bard.tools import search_web
 from agents.bard import states, prompts
 from agents import utils

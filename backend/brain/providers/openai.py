@@ -3,10 +3,11 @@ OpenAI Provider - Integration with OpenAI GPT models
 """
 
 import logging
+import os
 from typing import Dict, Any, List, Optional, Union
 
 from ..specs import ProviderSpec
-from .provider_registry import check_provider_spec_availability
+from .provider_registry import get_provider_registry
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +31,24 @@ class OpenAIProvider:
     
     async def initialize(self) -> bool:
         """Validate config and initialize OpenAI client"""
-            if not OPENAI_AVAILABLE:
-                logger.error("OpenAI library not available")
-                return False
-            
+        if not OPENAI_AVAILABLE:
+            logger.error("OpenAI library not available")
+            return False
+        
         # Validate with registry
         if not self._validate_config():
             return False
         
         # Initialize client
         try:
+            # Get API key from config or environment
+            api_key = self.config.get("api_key") or os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                logger.error("OpenAI API key not found in config or OPENAI_API_KEY environment variable")
+                return False
+            
             self.client = AsyncOpenAI(
-                api_key=self.config["api_key"],
+                api_key=api_key,
                 timeout=self.config.get("timeout", 30.0),
                 max_retries=self.config.get("max_retries", 3),
                 organization=self.config.get("organization"),
@@ -56,19 +63,11 @@ class OpenAIProvider:
     
     def _validate_config(self) -> bool:
         """Validate configuration using provider registry"""
-        excluded_keys = {"api_key", "model", "temperature", "max_tokens", "stream", 
-                        "enabled", "timeout", "max_retries", "organization", "base_url"}
+        registry = get_provider_registry()
+        provider_type = "openai"
+        model = self.config.get("model")
         
-        spec = ProviderSpec(
-            provider_type="openai",
-            model=self.config.get("model"),
-            temperature=self.config.get("temperature"),
-            max_tokens=self.config.get("max_tokens"),
-            stream=self.config.get("stream", False),
-            custom_params={k: v for k, v in self.config.items() if k not in excluded_keys}
-        )
-        
-        is_valid, errors, _ = check_provider_spec_availability(spec)
+        is_valid, errors, _ = registry.check_provider_and_model(provider_type, model)
         if not is_valid:
             logger.error(f"Validation failed: {'; '.join(errors)}")
             return False
@@ -91,25 +90,25 @@ class OpenAIProvider:
             if not response.choices:
                 return self._error_response("No response from OpenAI")
             
-                choice = response.choices[0]
-                metadata = {
-                    "model": response.model,
-                    "usage": response.usage.dict() if response.usage else {},
-                    "finish_reason": choice.finish_reason,
-                    "provider": "openai"
-                }
-                
+            choice = response.choices[0]
+            metadata = {
+                "model": response.model,
+                "usage": response.usage.dict() if response.usage else {},
+                "finish_reason": choice.finish_reason,
+                "provider": "openai"
+            }
+            
             # Add tool/function calls if present
-                if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
-                    metadata["tool_calls"] = [call.dict() for call in choice.message.tool_calls]
+            if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
+                metadata["tool_calls"] = [call.dict() for call in choice.message.tool_calls]
             elif hasattr(choice.message, 'function_call') and choice.message.function_call:
                 metadata["function_call"] = choice.message.function_call
-                
-                return {
+            
+            return {
                 "content": choice.message.content or "",
-                    "metadata": metadata,
-                    "success": True
-                }
+                "metadata": metadata,
+                "success": True
+            }
         except Exception as e:
             logger.error(f"OpenAI request failed: {e}")
             return self._error_response(str(e))
@@ -140,11 +139,11 @@ class OpenAIProvider:
     
     def _error_response(self, error: str) -> Dict[str, Any]:
         """Create standardized error response"""
-            return {
-                "content": "",
+        return {
+            "content": "",
             "metadata": {"error": error, "provider": "openai"},
-                "success": False
-            }
+            "success": False
+        }
     
     async def generate_embeddings(
         self, 

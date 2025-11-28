@@ -1,7 +1,7 @@
 """
-ThinkxLife Backend with Brain Integration
+ThinkLife Backend with Brain Integration
 
-This is the main FastAPI application that integrates the ThinkxLife Brain
+This is the main FastAPI application that integrates the ThinkLife Brain
 system with existing chatbot functionality.
 """
 
@@ -16,9 +16,6 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from langfuse import Langfuse, get_client
-from evaluation import run_evaluation
-
 
 # Load environment variables
 load_dotenv()
@@ -31,7 +28,7 @@ logger = logging.getLogger(__name__)
 from brain import CortexFlow
 
 # Import Zoe AI Companion
-from agents.zoe import ZoeCore
+from agents.zoe import ZoeService
 
 # Import the Agent Orchestrator
 from agents.bard.orchestrator.orchestra import Orchestrator, get_llm
@@ -41,20 +38,18 @@ from agents.zoe.tts_service import tts_service
 
 # Global instances
 brain_instance = None
-zoe_instance = None
-
-langfuse = get_client()
+zoe_service_instance = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
-    global brain_instance, zoe_instance, orchestrator_instance
+    global brain_instance, zoe_service_instance, orchestrator_instance
 
     # Startup
-    logger.info("Starting ThinkxLife Backend with Brain and Zoe integration...")
+    logger.info("Starting ThinkLife Backend with Brain and Zoe integration...")
 
-    # Initialize Brain
+    # Initialize Brain 
     brain_config = {
         "providers": {
             "openai": {
@@ -68,11 +63,13 @@ async def lifespan(app: FastAPI):
     }
 
     brain_instance = CortexFlow(brain_config)
-    logger.info("Brain system initialized")
+    await brain_instance.initialize()
+    logger.info("Brain system (CortexFlow) initialized")
 
-    # Initialize Zoe with Brain integration
-    zoe_instance = ZoeCore(brain_instance)
-    logger.info("Zoe AI Companion initialized")
+    # Initialize Zoe Service
+    zoe_service_instance = ZoeService()
+    await zoe_service_instance.initialize()
+    logger.info("Zoe AI Companion initialized (Plugin architecture)")
 
     orchestrator_instance = Orchestrator(llm=get_llm())
     logger.info("Agent Orchestrator initialized")
@@ -80,10 +77,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down ThinkxLife Backend...")
+    logger.info("Shutting down ThinkLife Backend...")
     if brain_instance:
         await brain_instance.shutdown()
-    logger.info("Shutdown complete")
+    
+    if zoe_service_instance:
+        await zoe_service_instance.shutdown()
 
     if orchestrator_instance:
         await orchestrator_instance.close()
@@ -93,9 +92,9 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="ThinkxLife Backend with Brain",
+    title="ThinkLife Backend with Brain",
     description="AI-powered backend with centralized Brain orchestration",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -105,7 +104,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:3001",
-        "https://thinkxlife.vercel.app",
+        "https://thinklife.vercel.app",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
     ],
@@ -114,12 +113,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# LangFuse connection (logging and tracing)
-langfuse = Langfuse(
-    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-    host="https://cloud.langfuse.com",
-)
+
 
 
 # Pydantic models for API validation
@@ -165,18 +159,18 @@ class OrchestratorResponse(BaseModel):
     history: Optional[List[Dict[str, Any]]] = None
 
 
-def get_brain() -> ThinkxLifeBrain:
+def get_brain() -> CortexFlow:
     """Get Brain instance"""
     if not brain_instance:
         raise HTTPException(status_code=503, detail="Brain system not initialized")
     return brain_instance
 
 
-def get_zoe() -> ZoeCore:
-    """Get Zoe instance"""
-    if not zoe_instance:
+def get_zoe() -> ZoeService:
+    """Get Zoe service instance"""
+    if not zoe_service_instance:
         raise HTTPException(status_code=503, detail="Zoe system not initialized")
-    return zoe_instance
+    return zoe_service_instance
 
 
 # Brain API endpoints
@@ -188,10 +182,10 @@ async def brain_options():
 
 @app.post("/api/brain", response_model=APIBrainResponse)
 async def process_brain_request(
-    request: APIBrainRequest, brain: ThinkxLifeBrain = Depends(get_brain)
+    request: APIBrainRequest, brain: CortexFlow = Depends(get_brain)
 ) -> APIBrainResponse:
     """
-    Process a request through the ThinkxLife Brain system
+    Process a request through the ThinkLife Brain system
 
     This is the main endpoint that all frontend applications use
     to interact with AI capabilities.
@@ -243,7 +237,7 @@ async def process_brain_request(
 
 @app.get("/api/brain/health", response_model=HealthResponse)
 async def get_brain_health(
-    brain: ThinkxLifeBrain = Depends(get_brain),
+    brain: CortexFlow = Depends(get_brain),
 ) -> HealthResponse:
     """Get Brain system health status"""
     try:
@@ -261,7 +255,7 @@ async def get_brain_health(
 
 
 @app.get("/api/brain/analytics")
-async def get_brain_analytics(brain: ThinkxLifeBrain = Depends(get_brain)):
+async def get_brain_analytics(brain: CortexFlow = Depends(get_brain)):
     """Get Brain system analytics"""
     try:
         analytics = await brain.get_analytics()
@@ -284,12 +278,12 @@ async def zoe_chat_options():
 
 
 @app.post("/api/zoe/chat")
-async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeCore = Depends(get_zoe)):
+async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeService = Depends(get_zoe)):
     """
     Chat with Zoe AI Companion
 
-    This endpoint provides access to Zoe, the empathetic AI companion
-    that integrates with the Brain system for LLM calls.
+    This endpoint provides access to Zoe, the empathetic AI companion.
+    All LLM processing goes through: ZoeService - Plugin - CortexFlow - WorkflowEngine
     """
     try:
         # Validate request structure
@@ -321,35 +315,14 @@ async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeCore = Depends(get_
                 status_code=400, detail="Message too long (max 10,000 characters)"
             )
 
-        with langfuse.start_as_current_span(name="zoe-chat-interaction") as root_span:
-            # Run the main processing inside the span for better tracing
-            response = await zoe.process_message(
-                message=message,
-                user_context=user_context,
-                application="chatbot",
-                session_id=session_id,
-                user_id=user_id,
-            )
-
-            # Update trace attributes
-            root_span.update_trace(
-                session_id=session_id,
-                input={"user_input": message, "user_context": user_context},
-                output={"bot_response": response.get("response", "")},
-                metadata={"user_id": user_id},
-            )
-
-            # Fetch trace_id and run evaluator inside the active context
-            trace_id = langfuse.get_current_trace_id()
-            if trace_id:
-                eval_results = {}
-                user_input = message
-                bot_message = response.get("response", "")
-
-                eval_results = await run_evaluation(user_input, bot_message)
-
-                # Optionally log the evaluator results into the same span
-                root_span.update_trace(metadata={"evaluation_results": eval_results})
+        # Process through plugin architecture
+        response = await zoe.process_message(
+            message=message,
+            user_id=user_id,
+            session_id=session_id,
+            user_context=user_context,
+            application="chatbot"
+        )
 
         return response
 
@@ -360,14 +333,16 @@ async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeCore = Depends(get_
 
 @app.get("/api/zoe/sessions/{user_id}")
 async def get_zoe_user_sessions(
-    user_id: str, limit: int = 10, zoe: ZoeCore = Depends(get_zoe)
+    user_id: str, limit: int = 10, zoe: ZoeService = Depends(get_zoe)
 ):
     """Get recent Zoe sessions for a user"""
     try:
-        sessions = await zoe.get_user_sessions(user_id, limit)
+        # Note: This method needs to be implemented in ZoeService if needed
+        # For now, return empty list
         return {
             "success": True,
-            "sessions": sessions,
+            "sessions": [],
+            "message": "Session listing not yet implemented",
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
@@ -376,10 +351,10 @@ async def get_zoe_user_sessions(
 
 
 @app.get("/api/zoe/sessions/{session_id}/history")
-async def get_zoe_session_history(session_id: str, zoe: ZoeCore = Depends(get_zoe)):
+async def get_zoe_session_history(session_id: str, zoe: ZoeService = Depends(get_zoe)):
     """Get conversation history for a Zoe session"""
     try:
-        history = await zoe.get_session_history(session_id)
+        history = zoe.get_conversation_history(session_id)
         return {
             "success": True,
             "history": history,
@@ -391,10 +366,10 @@ async def get_zoe_session_history(session_id: str, zoe: ZoeCore = Depends(get_zo
 
 
 @app.delete("/api/zoe/sessions/{session_id}")
-async def end_zoe_session(session_id: str, zoe: ZoeCore = Depends(get_zoe)):
+async def end_zoe_session(session_id: str, zoe: ZoeService = Depends(get_zoe)):
     """End a Zoe conversation session"""
     try:
-        await zoe.end_session(session_id)
+        zoe.clear_conversation(session_id)
         return {
             "success": True,
             "message": "Session ended successfully",
@@ -406,7 +381,7 @@ async def end_zoe_session(session_id: str, zoe: ZoeCore = Depends(get_zoe)):
 
 
 @app.get("/api/zoe/health")
-async def get_zoe_health(zoe: ZoeCore = Depends(get_zoe)):
+async def get_zoe_health(zoe: ZoeService = Depends(get_zoe)):
     """Get Zoe health status"""
     try:
         health = await zoe.health_check()
@@ -420,23 +395,19 @@ async def get_zoe_health(zoe: ZoeCore = Depends(get_zoe)):
 async def get_session_analytics(
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
-    brain: ThinkxLifeBrain = Depends(get_brain),
-    zoe: ZoeCore = Depends(get_zoe),
+    brain: CortexFlow = Depends(get_brain),
+    zoe: ZoeService = Depends(get_zoe),
 ):
     """Get session analytics and statistics"""
     try:
-        # Get Brain analytics
-        brain_analytics = await brain.get_analytics()
-
         # Get session-specific data if requested
         session_data = {}
         if session_id:
-            session_data = await zoe.get_session_history(session_id)
+            session_data = zoe.get_conversation_history(session_id)
 
         return {
             "success": True,
             "data": {
-                "brain_analytics": brain_analytics,
                 "session_data": session_data,
                 "user_id": user_id,
                 "session_id": session_id,
@@ -458,13 +429,13 @@ async def chat_options():
 
 @app.post("/api/chat")
 async def legacy_chat_endpoint(
-    request: Dict[str, Any], zoe: ZoeCore = Depends(get_zoe)
+    request: Dict[str, Any], zoe: ZoeService = Depends(get_zoe)
 ):
     """
     Legacy chat endpoint for backward compatibility
 
-    This endpoint maintains compatibility with existing frontend code
-    while routing through Zoe AI Companion with full conversation management.
+    This endpoint maintains compatibility with existing frontend code.
+    All LLM processing goes through: ZoeService - Plugin - CortexFlow - WorkflowEngine
     """
     try:
         # Extract request data
@@ -501,13 +472,13 @@ async def legacy_chat_endpoint(
                 "timestamp": datetime.now().isoformat(),
             }
 
-        # Process through Zoe with conversation management
+        # Process through NEW plugin architecture
         zoe_response = await zoe.process_message(
             message=message,
-            user_context=user_context,
-            application="chatbot",
-            session_id=session_id,
             user_id=user_id,
+            session_id=session_id,
+            user_context=user_context,
+            application="chatbot"
         )
 
         # Generate TTS audio if avatar mode is enabled
@@ -553,7 +524,7 @@ async def legacy_chat_endpoint(
 async def create_application_endpoint(
     request: Dict[str, Any],
     application: str,
-    brain: ThinkxLifeBrain = Depends(get_brain),
+    brain: CortexFlow = Depends(get_brain),
 ):
     """Generic handler for application-specific endpoints"""
     api_request = APIBrainRequest(
@@ -570,7 +541,7 @@ async def create_application_endpoint(
 # Application-specific endpoints
 @app.post("/api/healing-rooms")
 async def healing_rooms_endpoint(
-    request: Dict[str, Any], brain: ThinkxLifeBrain = Depends(get_brain)
+    request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)
 ):
     """Healing rooms specific endpoint"""
     return await create_application_endpoint(request, "healing-rooms", brain)
@@ -578,7 +549,7 @@ async def healing_rooms_endpoint(
 
 @app.post("/api/inside-our-ai")
 async def inside_our_ai_endpoint(
-    request: Dict[str, Any], brain: ThinkxLifeBrain = Depends(get_brain)
+    request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)
 ):
     """Inside our AI specific endpoint"""
     return await create_application_endpoint(request, "inside-our-ai", brain)
@@ -586,7 +557,7 @@ async def inside_our_ai_endpoint(
 
 @app.post("/api/compliance")
 async def compliance_endpoint(
-    request: Dict[str, Any], brain: ThinkxLifeBrain = Depends(get_brain)
+    request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)
 ):
     """Compliance specific endpoint"""
     return await create_application_endpoint(request, "compliance", brain)
@@ -594,7 +565,7 @@ async def compliance_endpoint(
 
 @app.post("/api/exterior-spaces")
 async def exterior_spaces_endpoint(
-    request: Dict[str, Any], brain: ThinkxLifeBrain = Depends(get_brain)
+    request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)
 ):
     """Exterior spaces specific endpoint"""
     return await create_application_endpoint(request, "exterior-spaces", brain)
@@ -606,10 +577,10 @@ async def health_check():
     """Basic health check"""
     return {
         "status": "healthy",
-        "service": "ThinkxLife Backend with Brain and Zoe",
+        "service": "ThinkLife Backend with Brain and Zoe",
         "timestamp": datetime.now().isoformat(),
         "brain_available": brain_instance is not None,
-        "zoe_available": zoe_instance is not None,
+        "zoe_available": zoe_service_instance is not None,
     }
 
 
@@ -618,10 +589,10 @@ async def health_check():
 async def root():
     """Root endpoint"""
     return {
-        "message": "ThinkxLife Backend with Brain and Zoe Integration",
+        "message": "ThinkLife Backend with Brain and Zoe Integration",
         "version": "1.0.0",
         "brain_enabled": brain_instance is not None,
-        "zoe_enabled": zoe_instance is not None,
+        "zoe_enabled": zoe_service_instance is not None,
         "endpoints": {
             "brain": "/api/brain",
             "brain_health": "/api/brain/health",

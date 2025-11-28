@@ -31,8 +31,8 @@ ROUTER_PROMPT = """You are a router agent.
 Decide which path to take based on the user’s input and the retrieved content.
 
 Rules:
-- If the user refers to previous messages, conversation history, or is simply chatting casually → route to "chat".
-- If the user is asking about a specific topic or wants information to be turned into a story → route to "storyteller".
+- If the user refers to previous messages, conversation history, or is simply chatting casually - route to "chat".
+- If the user is asking about a specific topic or wants information to be turned into a story - route to "storyteller".
 
 """
 

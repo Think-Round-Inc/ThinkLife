@@ -32,7 +32,7 @@ from .guardrails_specs import SecurityConfig
 
 # Workflow specs
 from .workflow_specs import (
-    WorkflowType, ProcessingSpec, WorkflowExecution, ExecutionPlan
+    WorkflowStatus, WorkflowType, WorkflowStep, ProcessingSpec, WorkflowExecution, ExecutionPlan
 )
 
 # Reasoning specs
@@ -70,7 +70,7 @@ __all__ = [
     "SecurityConfig",
     
     # Workflow
-    "WorkflowType", "ProcessingSpec", "WorkflowExecution", "ExecutionPlan",
+    "WorkflowStatus", "WorkflowType", "WorkflowStep", "ProcessingSpec", "WorkflowExecution", "ExecutionPlan",
     
     # Reasoning
     "ReasoningContext",

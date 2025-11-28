@@ -10,8 +10,6 @@ langchain-chroma
 chromadb
 python-multipart
 anthropic
-pandas
-numpy
 httpx
 langfuse
 google-generativeai

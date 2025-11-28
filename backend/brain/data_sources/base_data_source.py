@@ -5,7 +5,7 @@ Defines the common interface and configuration for all data sources
 
 from dataclasses import dataclass, field
 from typing import Dict, Any
-from ..interfaces import DataSourceType
+from ..specs import DataSourceType
 
 
 @dataclass

@@ -1,5 +1,5 @@
 """
-Text-to-Speech Service for ThinkxLife Backend
+Text-to-Speech Service for ThinkLife Backend
 
 Handles high-quality speech generation using OpenAI TTS API
 """
@@ -93,8 +93,8 @@ class TTSService:
         # Remove emojis and special characters
         import re
         
-        # Remove common emojis
-        text = re.sub(r'[🌞🌻🌸😊😔🤗🤔💝🎉✨🌟💫🌈❤️💙💚💛💜🧡🤍🖤]', '', text)
+        # Remove common emojis (using Unicode code points)
+        text = re.sub(r'[\U0001F31E\U0001F33B\U0001F338\U0001F60A\U0001F614\U0001F917\U0001F914\U0001F49D\U0001F389\u2728\U0001F31F\U0001F4AB\U0001F308\u2764\U0001F499\U0001F49A\U0001F49B\U0001F49C\U0001F9E1\U0001F90D\U0001F5A4]', '', text)
         
         # Remove other emoji patterns
         text = re.sub(r'[\U0001F600-\U0001F64F]', '', text)  # emoticons
