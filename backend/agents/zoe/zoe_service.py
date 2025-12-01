@@ -22,6 +22,23 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+# LangFuse tracing
+try:
+    from langfuse.decorators import observe, langfuse_context
+    LANGFUSE_AVAILABLE = True
+except (ImportError, Exception) as e:
+    LANGFUSE_AVAILABLE = False
+    def observe(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    class LangfuseContext:
+        def update_current_trace(self, **kwargs):
+            pass
+        def update_current_observation(self, **kwargs):
+            pass
+    langfuse_context = LangfuseContext()
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,6 +84,7 @@ class ZoeService:
             logger.error(f"Failed to initialize ZoeService: {e}")
             return False
     
+    @observe(name="zoe_process_message")
     async def process_message(
         self,
         message: str,
@@ -88,6 +106,19 @@ class ZoeService:
         Returns:
             Dictionary with response and metadata
         """
+        # Update trace with Zoe-specific metadata
+        langfuse_context.update_current_trace(
+            name="zoe_conversation",
+            user_id=user_id,
+            session_id=session_id,
+            metadata={
+                "agent": "zoe",
+                "application": application,
+                "message_length": len(message),
+                "has_user_context": user_context is not None
+            }
+        )
+        
         if not self.initialized:
             await self.initialize()
         

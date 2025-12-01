@@ -40,15 +40,15 @@ export async function GET(request: NextRequest) {
     console.log("Profile API: Looking for user with email:", data.user.email)
 
     // Handle guest users who don't exist in database
-    if (data.user.email === "guest@thinkxlife.com") {
+    if (data.user.email === "guest@thinklife.com") {
       console.log("Profile API: Returning guest user profile")
       const guestUser = {
         id: "guest-user",
         name: "Guest User",
-        email: "guest@thinkxlife.com",
+        email: "guest@thinklife.com",
         firstName: "Guest",
         lastName: "User",
-        bio: "Welcome to ThinkxLife! This is a guest account for exploring our platform.",
+        bio: "Welcome to ThinkLife! This is a guest account for exploring our platform.",
         phone: null,
         dateOfBirth: null,
         location: null,
@@ -167,7 +167,7 @@ export async function PUT(request: NextRequest) {
     console.log("Profile Update API: User email:", data.user.email)
 
     // Handle guest users who can't update database
-    if (data.user.email === "guest@thinkxlife.com") {
+    if (data.user.email === "guest@thinklife.com") {
       console.log("Profile Update API: Guest user attempted to update profile")
       return NextResponse.json(
         { error: "Guest users cannot update their profile. Please create a full account to save changes." },

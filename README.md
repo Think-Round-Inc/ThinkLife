@@ -1,4 +1,4 @@
-# ThinkxLife
+# ThinkLife
 
 **A comprehensive platform showcasing Think Round's AI integration across healing rooms, exterior spaces and related projects.**
 

@@ -12,9 +12,40 @@ from datetime import datetime
 from functools import reduce
 import operator
 
-from ..specs import WorkflowStatus
-
 logger = logging.getLogger(__name__)
+
+# Optional LangFuse imports - gracefully handle compatibility issues
+try:
+    from langfuse.decorators import observe, langfuse_context
+    LANGFUSE_AVAILABLE = True
+except (ImportError, Exception) as e:
+    logger.warning(f"LangFuse not available: {e}. Continuing without observability.")
+    LANGFUSE_AVAILABLE = False
+    
+    # Create no-op decorators and context
+    def observe(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    class LangfuseContext:
+        def update_current_trace(self, **kwargs):
+            pass
+        def update_current_observation(self, **kwargs):
+            pass
+        def observe_llm_call(self, **kwargs):
+            class NoOpContext:
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    pass
+                def update(self, **kwargs):
+                    pass
+            return NoOpContext()
+    
+    langfuse_context = LangfuseContext()
+
+from ..specs import WorkflowStatus
 
 
 class WorkflowState(TypedDict):
@@ -177,10 +208,20 @@ class WorkflowEngine:
             # Store execution
             self.executions[execution_id] = final_state
             
-            # Build response
+            # Build response - ensure content is never None
+            final_content = final_state.get("final_content")
+            if final_content is None:
+                # Fallback: try to extract from llm_response
+                llm_response = final_state.get("llm_response")
+                if llm_response and isinstance(llm_response, dict):
+                    final_content = llm_response.get("content", "")
+                else:
+                    final_content = "No response generated"
+                    logger.warning(f"[{execution_id}] final_content is None, using fallback")
+            
             result = {
-                "success": final_state["status"] == "completed",
-                "content": final_state["final_content"],
+                "success": final_state["status"] == "completed" and final_content and final_content != "No response generated",
+                "content": final_content or "",
                 "execution_id": execution_id,
                 "status": final_state["status"],
                 "metadata": {
@@ -469,10 +510,21 @@ class WorkflowEngine:
         
         return state
     
+    @observe(name="workflow_call_provider")
     async def _call_provider_node(self, state: WorkflowState) -> WorkflowState:
-        """Call LLM provider with built messages"""
+        """Call LLM provider with built messages - tracked in LangFuse"""
         state["execution_steps"].append("call_provider")
         logger.info(f"[{state['execution_id']}] Calling LLM provider")
+        
+        # Track workflow execution in LangFuse
+        langfuse_context.update_current_trace(
+            name="workflow_execution",
+            metadata={
+                "execution_id": state["execution_id"],
+                "workflow_step": "call_provider",
+                "session_id": state.get("context", {}).get("session_id")
+            }
+        )
         
         try:
             from ..providers import create_provider
@@ -502,7 +554,7 @@ class WorkflowEngine:
             provider = create_provider(provider_type, provider_config)
             await provider.initialize()
             
-            # Call provider
+            # Call provider (LangFuse decorators are in provider.generate_response)
             logger.info(f"Calling {provider_type} with {len(messages)} messages")
             response = await provider.generate_response(messages=messages)
             
@@ -511,15 +563,38 @@ class WorkflowEngine:
             # Extract content from response
             if response.get("success"):
                 state["final_content"] = response.get("content", "")
+                
+                # Track successful response in LangFuse
+                langfuse_context.update_current_observation(
+                    metadata={
+                        "provider": provider_type,
+                        "response_length": len(state["final_content"]),
+                        "success": True
+                    }
+                )
             else:
                 error_msg = response.get("error", "Provider returned unsuccessful response")
                 state["errors"].append(error_msg)
                 state["final_content"] = f"Error: {error_msg}"
+                
+                # Track error in LangFuse
+                langfuse_context.update_current_observation(
+                    level="ERROR",
+                    status_message=error_msg,
+                    metadata={"provider": provider_type, "success": False}
+                )
             
         except Exception as e:
             logger.error(f"Provider call node error: {e}")
             state["errors"].append(f"Provider error: {str(e)}")
             state["final_content"] = f"Error calling provider: {str(e)}"
+            
+            # Track exception in LangFuse
+            langfuse_context.update_current_observation(
+                level="ERROR",
+                status_message=str(e),
+                metadata={"error": str(e)}
+            )
         
         return state
     

@@ -17,12 +17,51 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 
-# Load environment variables
+# Load environment variables (must be first!)
 load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize LangFuse for tracing (must be done before importing modules that use decorators)
+# The decorators module reads from environment variables, so we need to ensure they're loaded
+langfuse_client = None
+try:
+    from langfuse import Langfuse
+    from langfuse.decorators import langfuse_context
+    import os
+    
+    # Re-check env vars after load_dotenv (in case they were set)
+    langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
+    langfuse_host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+    
+    if langfuse_public_key and langfuse_secret_key:
+        # Initialize client for manual operations only (flushing)
+        # Decorators automatically use credentials from environment variables
+        langfuse_client = Langfuse(
+            public_key=langfuse_public_key,
+            secret_key=langfuse_secret_key,
+            host=langfuse_host,
+            debug=os.getenv("LANGFUSE_DEBUG", "false").lower() == "true"
+        )
+        
+        logger.info(f"LangFuse tracing enabled (host: {langfuse_host})")
+        logger.info(f"   Public key: {langfuse_public_key[:20]}...")
+        logger.info("   @observe decorators will auto-capture LLM calls")
+    else:
+        logger.warning("LangFuse credentials not found - tracing disabled")
+        logger.warning("   Add to .env file:")
+        logger.warning("   LANGFUSE_PUBLIC_KEY=pk-lf-...")
+        logger.warning("   LANGFUSE_SECRET_KEY=sk-lf-...")
+        langfuse_client = None
+except ImportError:
+    logger.warning("LangFuse not installed. Install with: pip install langfuse")
+    langfuse_client = None
+except Exception as e:
+    logger.error(f"LangFuse initialization failed: {e}", exc_info=True)
+    langfuse_client = None
 
 # Import Brain system
 from brain import CortexFlow
@@ -30,8 +69,6 @@ from brain import CortexFlow
 # Import Zoe AI Companion
 from agents.zoe import ZoeService
 
-# Import the Agent Orchestrator
-from agents.bard.orchestrator.orchestra import Orchestrator, get_llm
 
 # Import TTS Service
 from agents.zoe.tts_service import tts_service
@@ -44,7 +81,7 @@ zoe_service_instance = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
-    global brain_instance, zoe_service_instance, orchestrator_instance
+    global brain_instance, zoe_service_instance
 
     # Startup
     logger.info("Starting ThinkLife Backend with Brain and Zoe integration...")
@@ -71,21 +108,24 @@ async def lifespan(app: FastAPI):
     await zoe_service_instance.initialize()
     logger.info("Zoe AI Companion initialized (Plugin architecture)")
 
-    orchestrator_instance = Orchestrator(llm=get_llm())
-    logger.info("Agent Orchestrator initialized")
-
     yield
 
     # Shutdown
     logger.info("Shutting down ThinkLife Backend...")
+    
+    # Flush LangFuse traces before shutdown
+    if langfuse_client:
+        try:
+            langfuse_client.flush()
+            logger.info("LangFuse traces flushed")
+        except Exception as e:
+            logger.warning(f"Failed to flush LangFuse traces: {e}")
+    
     if brain_instance:
         await brain_instance.shutdown()
     
     if zoe_service_instance:
         await zoe_service_instance.shutdown()
-
-    if orchestrator_instance:
-        await orchestrator_instance.close()
 
     logger.info("Shutdown complete")
 
@@ -146,19 +186,6 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 
-class OrchestratorRequest(BaseModel):
-    task: str
-    session_id: Optional[str] = None
-
-
-class OrchestratorResponse(BaseModel):
-    output: str
-    session_id: str
-    agent_name: str
-    trace: Optional[Dict[str, Any]] = None
-    history: Optional[List[Dict[str, Any]]] = None
-
-
 def get_brain() -> CortexFlow:
     """Get Brain instance"""
     if not brain_instance:
@@ -199,7 +226,6 @@ async def process_brain_request(
             "compliance",
             "exterior-spaces",
             "general",
-            "agent_orchestrator",
         ]
 
         if request.application not in valid_applications:
@@ -219,6 +245,14 @@ async def process_brain_request(
 
         # Process with Brain
         response_data = await brain.process_request(brain_request_data)
+        
+        # Flush LangFuse traces after each request to ensure they're sent immediately
+        if langfuse_client:
+            try:
+                langfuse_client.flush()
+                logger.debug("LangFuse traces flushed after request")
+            except Exception as e:
+                logger.warning(f"Failed to flush LangFuse traces: {e}")
 
         # Return formatted response
         return APIBrainResponse(
@@ -323,6 +357,14 @@ async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeService = Depends(g
             user_context=user_context,
             application="chatbot"
         )
+        
+        # Flush LangFuse traces after each request to ensure they're sent
+        if langfuse_client:
+            try:
+                langfuse_client.flush()
+                logger.debug("LangFuse traces flushed after request")
+            except Exception as e:
+                logger.warning(f"Failed to flush LangFuse traces: {e}")
 
         return response
 
@@ -585,6 +627,45 @@ async def health_check():
 
 
 # Root endpoint
+@app.get("/api/langfuse/status")
+async def langfuse_status():
+    """Check LangFuse configuration and status"""
+    try:
+        from langfuse.decorators import langfuse_context
+        import os
+        
+        status = {
+            "configured": False,
+            "client_initialized": langfuse_client is not None,
+            "decorator_client": langfuse_context.client_instance is not None,
+            "environment_variables": {
+                "LANGFUSE_PUBLIC_KEY": "SET" if os.getenv("LANGFUSE_PUBLIC_KEY") else "NOT SET",
+                "LANGFUSE_SECRET_KEY": "SET" if os.getenv("LANGFUSE_SECRET_KEY") else "NOT SET",
+                "LANGFUSE_HOST": os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+            }
+        }
+        
+        if langfuse_client:
+            status["configured"] = True
+            status["tracing_enabled"] = getattr(langfuse_client, 'tracing_enabled', None)
+            status["host"] = getattr(langfuse_client, 'host', None)
+        
+        if langfuse_context.client_instance:
+            status["decorator_configured"] = True
+        
+        return {
+            "success": True,
+            "langfuse": status,
+            "message": "LangFuse is configured and ready" if status["configured"] else "LangFuse credentials not found"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Error checking LangFuse status"
+        }
+
+
 @app.get("/")
 async def root():
     """Root endpoint"""
@@ -597,6 +678,7 @@ async def root():
             "brain": "/api/brain",
             "brain_health": "/api/brain/health",
             "brain_analytics": "/api/brain/analytics",
+            "langfuse_status": "/api/langfuse/status",
             "zoe": {
                 "chat": "/api/zoe/chat",
                 "health": "/api/zoe/health",
@@ -612,51 +694,6 @@ async def root():
             },
         },
     }
-
-
-# Agent Orchestrator
-
-
-@app.post("/api/agent/orchestrator/chat", response_model=OrchestratorResponse)
-async def orchestrator_chat(request: OrchestratorRequest):
-    """
-    Main entrypoint to run Agent Orchestrator.
-    Handles routing, new/existing sessions, tracing, and history internally.
-    """
-    if orchestrator_instance is None:
-        raise HTTPException(status_code=500, detail="Orchestrator is not initialized")
-
-    try:
-        result = await orchestrator_instance.orchestrate(
-            Input=request.task,
-            session_id=request.session_id,  # orchestrator handles new/existing
-        )
-
-        return OrchestratorResponse(**result)
-
-    except Exception as e:
-        logger.exception("Error running orchestrator")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/agent/orchestrator/state/{session_id}")
-async def orchestrator_state(session_id: str):
-    """
-    Get the current state of any orchestrated agent session.
-    """
-    if orchestrator_instance is None:
-        raise HTTPException(status_code=500, detail="Orchestrator is not initialized")
-
-    if session_id not in orchestrator_instance.sessions:
-        raise HTTPException(status_code=404, detail="Unknown session_id")
-
-    runner = orchestrator_instance.sessions[session_id]
-    try:
-        snapshot = await runner.get_current_state(session_id)
-        return {"session_id": session_id, "state": snapshot}
-    except Exception as e:
-        logger.exception("Error getting session state")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

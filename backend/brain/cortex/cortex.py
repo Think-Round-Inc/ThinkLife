@@ -11,6 +11,23 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 from dotenv import load_dotenv
 
+# LangFuse tracing
+try:
+    from langfuse.decorators import observe, langfuse_context
+    LANGFUSE_AVAILABLE = True
+except (ImportError, Exception) as e:
+    LANGFUSE_AVAILABLE = False
+    def observe(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    class LangfuseContext:
+        def update_current_trace(self, **kwargs):
+            pass
+        def update_current_observation(self, **kwargs):
+            pass
+    langfuse_context = LangfuseContext()
+
 from ..specs import (
     BrainRequest, BrainResponse, IAgent,
     BrainConfig, BrainAnalytics, PluginInfo, WorkflowExecution, 
@@ -115,6 +132,7 @@ class CortexFlow:
         if not self._initialized:
             await self.initialize()
     
+    @observe(name="cortex_process_agent_request")
     async def process_agent_request(
         self,
         agent_specs: AgentExecutionSpec,
@@ -132,6 +150,17 @@ class CortexFlow:
         6. Return response from workflow engine
         """
         start_time = time.time()
+        
+        # Update observation metadata (not trace - this is a nested observation)
+        langfuse_context.update_current_observation(
+            metadata={
+                "agent_type": agent_specs.agent_type if hasattr(agent_specs, 'agent_type') else "unknown",
+                "provider": agent_specs.provider.provider_type if agent_specs.provider else None,
+                "model": agent_specs.provider.model if agent_specs.provider else None,
+                "tools_count": len(agent_specs.tools) if agent_specs.tools else 0,
+                "data_sources_count": len(agent_specs.data_sources) if agent_specs.data_sources else 0
+            }
+        )
         
         try:
             # Ensure initialization
@@ -241,6 +270,7 @@ class CortexFlow:
                 "processing_time": time.time() - start_time
             }
 
+    @observe(name="cortex_create_execution_plan")
     async def create_execution_plan(
         self,
         agent_specs: AgentExecutionSpec,
@@ -427,6 +457,7 @@ class CortexFlow:
         
         return round(latency, 2)
     
+    @observe(name="cortex_execute_plan")
     async def execute_plan(
         self,
         plan: ExecutionPlan,
@@ -456,6 +487,7 @@ class CortexFlow:
             logger.error(f"Execution failed: {e}")
             raise
     
+    @observe(name="cortex_execute_agent_request")
     async def execute_agent_request(
         self,
         plan: ExecutionPlan,

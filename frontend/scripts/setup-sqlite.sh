@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🗄️  Setting up SQLite database for ThinkxLife..."
+echo "🗄️  Setting up SQLite database for ThinkLife..."
 
 # Create .env.local if it doesn't exist
 if [ ! -f .env.local ]; then

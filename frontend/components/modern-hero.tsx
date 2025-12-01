@@ -55,7 +55,7 @@ export default function ModernHero() {
         {/* Welcome Badge */}
         <div className="inline-flex items-center gap-2 bg-white/60 backdrop-blur-sm border border-purple-200/50 rounded-full px-6 py-3 mb-6 animate-fade-in shadow-lg">
           <Sparkles className="w-5 h-5 text-purple-600" />
-          <span className="text-purple-800 font-medium">Sail the Seas of ThinkxLife</span>
+          <span className="text-purple-800 font-medium">Sail the Seas of ThinkLife</span>
         </div>
 
         {/* Main Heading */}
@@ -73,7 +73,7 @@ export default function ModernHero() {
 
         {/* Subtitle */}
         <p className="text-xl text-slate-600 max-w-3xl mx-auto leading-relaxed animate-fade-in-up delay-200 mb-16">
-          At ThinkRound, Inc, we're pioneering AI for humanity through ThinkxLife, our comprehensive platform
+          At ThinkRound, Inc, we're pioneering AI for humanity through ThinkLife, our comprehensive platform
           that integrates AI thoughtfully into healing rooms, arts programs, and community initiatives while preserving human dignity and cultural authenticity.
         </p>
 

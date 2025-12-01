@@ -18,11 +18,6 @@ try:
 except ImportError as e:
     print(f"Warning: Tavily Search Tool not available: {e}")
 
-try:
-    from .document_summarizer import DocumentSummarizerTool, create_document_summarizer_tool
-    __all__.extend(["DocumentSummarizerTool", "create_document_summarizer_tool"])
-except ImportError as e:
-    print(f"Warning: Document Summarizer Tool not available: {e}")
 
 
 # Factory function to create tools
@@ -33,7 +28,6 @@ def create_tool(tool_type: str, config: dict = None):
     
     tool_map = {
         "tavily_search": (TavilySearchTool, create_tavily_search_tool),
-        "document_summarizer": (DocumentSummarizerTool, create_document_summarizer_tool),
     }
     
     if tool_type not in tool_map:
@@ -53,7 +47,6 @@ def get_available_tools():
     available = []
     tool_map = {
         "TavilySearchTool": "tavily_search",
-        "DocumentSummarizerTool": "document_summarizer",
     }
     
     for class_name, tool_type in tool_map.items():

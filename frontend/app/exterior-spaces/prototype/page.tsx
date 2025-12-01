@@ -18,7 +18,7 @@ export default function ExteriorSpacesPage() {
 
   // Set page title
   useEffect(() => {
-    document.title = 'Exterior Spaces | ThinkxLife'
+    document.title = 'Exterior Spaces | ThinkLife'
   }, [])
 
   // Set basic iframe styling

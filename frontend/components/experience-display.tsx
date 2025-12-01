@@ -127,7 +127,7 @@ export default function ExperienceDisplay({
       <div className="text-center py-12">
         <Quote className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <h3 className="text-xl font-semibold text-gray-700 mb-2">No Experiences Yet</h3>
-        <p className="text-gray-500">Be the first to share your experience with ThinkxLife!</p>
+        <p className="text-gray-500">Be the first to share your experience with ThinkLife!</p>
       </div>
     );
   }

@@ -1243,7 +1243,7 @@ export default function ModernDashboard() {
               <Card>
                 <CardHeader>
                   <CardTitle>Documentation</CardTitle>
-                  <CardDescription>Learn how to use ThinkxLife effectively</CardDescription>
+                  <CardDescription>Learn how to use ThinkLife effectively</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">

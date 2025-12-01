@@ -2,7 +2,7 @@
 Zoe Conversation Manager
 
 Manages conversation history, sessions, and context for Zoe AI Companion.
-Integrates with the Brain's ConversationManager for comprehensive conversation tracking.
+Standalone conversation management system with session tracking and cleanup.
 """
 
 import uuid
@@ -11,18 +11,10 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 from dataclasses import dataclass
 
-# Import Brain conversation manager
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-try:
-    from brain.conversation_manager import ConversationManager
-except ImportError as e:
-    logging.warning(f"Brain conversation manager import failed: {e}")
-    ConversationManager = None
-
 logger = logging.getLogger(__name__)
+
+# Note: ConversationManager from brain module is not currently implemented
+# ZoeConversationManager works standalone with its own session management
 
 
 @dataclass
@@ -55,25 +47,21 @@ class ZoeConversationManager:
     Features:
     - Session management with unique IDs
     - Conversation history tracking
-    - Context integration with Brain's ConversationManager
     - Automatic session cleanup
     - User preference storage
     - Conversation summarization for long sessions
+    
+    Note: This is a standalone conversation manager. Brain integration
+    can be added in the future if needed.
     """
     
-    def __init__(self, brain_conversation_manager: Optional[ConversationManager] = None):
+    def __init__(self, brain_conversation_manager: Optional[Any] = None):
         self.sessions: Dict[str, ConversationSession] = {}
         self.user_sessions: Dict[str, List[str]] = {}  # user_id -> [session_ids]
         
-        # Initialize or use provided conversation manager
-        if brain_conversation_manager:
-            self.conversation_manager = brain_conversation_manager
-        elif ConversationManager:
-            self.conversation_manager = ConversationManager()
-        else:
-            # Fallback if ConversationManager is not available
-            self.conversation_manager = None
-            logger.warning("ConversationManager not available - running without Brain integration")
+        # Brain conversation manager integration (currently not implemented)
+        # Reserved for future integration
+        self.conversation_manager = brain_conversation_manager
         
         # Configuration
         self.max_message_history = 50
