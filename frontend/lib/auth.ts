@@ -1,10 +1,6 @@
 import { NextAuthOptions } from "next-auth"
-import { randomUUID } from "crypto"
-import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
-import bcrypt from "bcryptjs"
-import { prisma } from "./prisma"
 
 declare module "next-auth" {
   interface Session {
@@ -19,7 +15,6 @@ declare module "next-auth" {
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
-  adapter: PrismaAdapter(prisma),
   providers: [
     // Only include OAuth providers if environment variables are present
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? [
@@ -39,54 +34,18 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
-        // Guest login fallback
+        // Guest login - simple authentication without database
         if (credentials.email === "guest@guest.com" && credentials.password === "ThinxLife") {
           return {
             id: "guest-user",
-            email: "guest@thinkxlife.com",
+            email: "guest@thinklife.com",
             name: "Guest User",
           }
         }
 
-        try {
-          const user = await prisma.user.findUnique({
-            where: {
-              email: credentials.email
-            }
-          })
-
-          if (!user || !user.password) {
-            return null
-          }
-
-          const isPasswordValid = await bcrypt.compare(
-            credentials.password,
-            user.password
-          )
-
-          if (!isPasswordValid) {
-            return null
-          }
-
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-          }
-        } catch (error) {
-          console.error("Database error during authentication:", error)
-          
-          // If database fails and guest credentials are provided, allow guest login
-          if (credentials.email === "guest@guest.com" && credentials.password === "ThinxLife") {
-            return {
-              id: "guest-user",
-              email: "guest@thinkxlife.com",
-              name: "Guest User (DB Fallback)",
-            }
-          }
-          
-          return null
-        }
+        // For now, only guest login is supported
+        // To add more users, extend this logic or integrate with your backend API
+        return null
       }
     })
   ],
@@ -108,25 +67,6 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string
       }
       return session
-    },
-  },
-  events: {
-    async createUser({ user }) {
-      try {
-        // Create a minimal User on first OAuth signup
-        await prisma.user.create({
-          data: {
-            id: randomUUID(),
-            email: user.email!,
-            name: user.name,
-            image: user.image,
-            updatedAt: new Date(),
-          },
-        })
-      } catch (error) {
-        // Ignore if profile already exists or table is not ready
-        console.warn('[auth] createUser profile creation skipped:', (error as Error)?.message)
-      }
     },
   },
 }

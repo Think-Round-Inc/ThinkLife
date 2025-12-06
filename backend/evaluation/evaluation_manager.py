@@ -53,7 +53,7 @@ if LANGFUSE_AVAILABLE:
     try:
         public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
         secret_key = os.getenv("LANGFUSE_SECRET_KEY")
-        host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+        host = os.getenv("LANGFUSE_HOST", "https://us.cloud.langfuse.com")
         
         if not public_key or not secret_key:
             logger.warning("LangFuse credentials not found in environment variables. Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY.")

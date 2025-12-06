@@ -8,36 +8,6 @@ from typing import Dict, Any, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
-# Optional LangFuse imports - gracefully handle compatibility issues
-try:
-    from langfuse.decorators import observe, langfuse_context
-    LANGFUSE_AVAILABLE = True
-except (ImportError, Exception) as e:
-    logger.warning(f"LangFuse not available: {e}. Continuing without observability.")
-    LANGFUSE_AVAILABLE = False
-    
-    # Create no-op decorators and context
-    def observe(name=None, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    class LangfuseContext:
-        def update_current_trace(self, **kwargs):
-            pass
-        def update_current_observation(self, **kwargs):
-            pass
-        def observe_llm_call(self, **kwargs):
-            class NoOpContext:
-                def __enter__(self):
-                    return self
-                def __exit__(self, *args):
-                    pass
-                def update(self, **kwargs):
-                    pass
-            return NoOpContext()
-    
-    langfuse_context = LangfuseContext()
 
 from ..specs import ProviderSpec
 from .provider_registry import get_provider_registry
@@ -104,7 +74,6 @@ class OpenAIProvider:
             return False
         return True
     
-    @observe(name="openai_generate_response")
     async def generate_response(
         self, 
         messages: List[Dict[str, str]], 
@@ -124,22 +93,7 @@ class OpenAIProvider:
                     raise ValueError("Model not specified in config or kwargs")
                 params["model"] = model
             
-            # Track in LangFuse
-            try:
-                langfuse_context.update_current_trace(
-                    name="openai_provider_call",
-                    metadata={
-                        "provider": "openai",
-                        "model": model,
-                        "message_count": len(messages),
-                        "temperature": params.get("temperature"),
-                        "max_tokens": params.get("max_tokens")
-                    }
-                )
-            except Exception as lf_error:
-                logger.warning(f"LangFuse trace update error (non-fatal): {lf_error}")
-            
-            # Make OpenAI API call (LangFuse observation is handled by @observe decorator on the method)
+            # Make OpenAI API call
             response = await self.client.chat.completions.create(**params)
             
             if not response.choices:
@@ -161,17 +115,6 @@ class OpenAIProvider:
             elif hasattr(choice.message, 'function_call') and choice.message.function_call:
                 metadata["function_call"] = choice.message.function_call
             
-            # Update LangFuse with usage metrics
-            if response.usage:
-                langfuse_context.update_current_observation(
-                    metadata={
-                        "prompt_tokens": response.usage.prompt_tokens,
-                        "completion_tokens": response.usage.completion_tokens,
-                        "total_tokens": response.usage.total_tokens,
-                        "finish_reason": choice.finish_reason
-                    }
-                )
-            
             return {
                 "content": content,
                 "metadata": metadata,
@@ -179,11 +122,6 @@ class OpenAIProvider:
             }
         except Exception as e:
             logger.error(f"OpenAI request failed: {e}")
-            langfuse_context.update_current_observation(
-                level="ERROR",
-                status_message=str(e),
-                metadata={"error": str(e)}
-            )
             return self._error_response(str(e))
     
     def _build_request_params(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:

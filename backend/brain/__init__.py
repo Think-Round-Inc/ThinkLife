@@ -4,7 +4,7 @@ ThinkLife Brain - Generalized AI Orchestration System
 This module contains the centralized AI Brain that manages all AI operations
 across the ThinkLife platform using a plugin-based architecture.
 
-Version 2.0 Features:
+Features:
 - Plugin-based agent system with automatic discovery
 - LangGraph workflow engine for standardized execution
 - MCP integration for data source abstraction
@@ -93,9 +93,6 @@ __all__ = [
     "ToolRegistry",
     "BaseTool",
     "ToolResult",
-    # Tools (may be None if not available)
-    # "TavilySearchTool",  # Optional - may not be available
-    # "DocumentSummarizerTool",  # Optional - may not be available
     "create_tool",
     "get_available_tool_types",
     

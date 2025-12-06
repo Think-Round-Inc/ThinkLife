@@ -12,9 +12,9 @@ export const metadata: Metadata = {
   title: "ThinkLife",
   description: "",
   icons: {
-    icon: "/ThinkxLife.png", // main favicon
-    shortcut: "/ThinkxLife.png", // <link rel="shortcut icon">
-    apple: "/ThinkxLife.png", // for iOS homescreen
+    icon: "/tr_logo.png", // main favicon
+    shortcut: "/tr_logo.png", // <link rel="shortcut icon">
+    apple: "/tr_logo.png", // for iOS homescreen
   },
   generator: "v0.dev",
 };

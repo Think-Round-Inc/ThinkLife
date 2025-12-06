@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Menu, X, User, LogOut, Activity, Heart, Shield } from "lucide-react";
+import { Menu, X, Heart, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,21 +12,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<{ name?: string | null; email?: string | null; image?: string | null; rolePrimary?: string } | null>(null);
-  const supabase = createClientComponentClient();
+  const { isAuthenticated, isLoading, user, login, logout } = useAuth();
   const pathname = usePathname();
 
   // Check if user is actively using features
   const isUsingAIAwareness = pathname?.startsWith('/inside-our-ai');
   const isUsingHealingRooms = pathname?.startsWith('/healing-rooms');
   const isUsingExteriorSpaces = pathname?.startsWith('/exterior-spaces');
-  const isHome = pathname === '/';
 
   useEffect(() => {
     const handleScroll = () => {
@@ -37,66 +33,51 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Supabase auth state
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        const { data } = await supabase.auth.getUser();
-        if (!mounted) return;
-        if (!data.user?.email) {
-          setCurrentUser(null);
-          return;
-        }
-        // Prefer RBAC profile data
-        const rbacRes = await fetch('/api/rbac/profile', { cache: 'no-store' });
-        if (rbacRes.ok) {
-          const j = await rbacRes.json();
-          setCurrentUser({ 
-            name: j.user?.name || null, 
-            email: j.user?.email || data.user.email, 
-            image: j.user?.image || null,
-            rolePrimary: j.user?.rolePrimary || 'MEMBER'
-          });
-        } else {
-          // Fallback to old API
-          const res = await fetch('/api/profile', { cache: 'no-store' });
-          if (res.ok) {
-            const j = await res.json();
-            setCurrentUser({ 
-              name: j.user?.name || null, 
-              email: j.user?.email || data.user.email, 
-              image: null,
-              rolePrimary: 'MEMBER'
-            });
-          } else {
-            setCurrentUser({
-              name: (data.user.user_metadata as any)?.name || (data.user.user_metadata as any)?.full_name || null,
-              email: data.user.email,
-              image: (data.user.user_metadata as any)?.avatar_url || null,
-              rolePrimary: 'MEMBER'
-            });
-          }
-        }
-      } finally {
-        if (mounted) setAuthLoading(false);
-      }
-    };
-    load();
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event) => {
-      load();
-    });
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
-  }, [supabase]);
-
-  const getInitials = (name: string | null | undefined) => {
-    if (!name) return "U";
-    return name.split(" ").map(n => n[0]).join("").toUpperCase();
+  // Get first letter of first name
+  const getFirstLetter = (name: string | null | undefined, email?: string | null) => {
+    if (name) {
+      const firstName = name.split(" ")[0];
+      return firstName[0].toUpperCase();
+    }
+    if (email) {
+      return email[0].toUpperCase();
+    }
+    return "U";
   };
+
+  // Generate luxury color based on first letter (consistent color per user)
+  const getLuxuryColor = (letter: string) => {
+    const luxuryColors = [
+      { bg: "bg-gradient-to-br from-amber-500 to-amber-700", text: "text-white" },
+      { bg: "bg-gradient-to-br from-emerald-500 to-emerald-700", text: "text-white" },
+      { bg: "bg-gradient-to-br from-rose-500 to-rose-700", text: "text-white" },
+      { bg: "bg-gradient-to-br from-indigo-500 to-indigo-700", text: "text-white" },
+      { bg: "bg-gradient-to-br from-purple-500 to-purple-700", text: "text-white" },
+      { bg: "bg-gradient-to-br from-teal-500 to-teal-700", text: "text-white" },
+      { bg: "bg-gradient-to-br from-pink-500 to-pink-700", text: "text-white" },
+      { bg: "bg-gradient-to-br from-blue-500 to-blue-700", text: "text-white" },
+      { bg: "bg-gradient-to-br from-violet-500 to-violet-700", text: "text-white" },
+      { bg: "bg-gradient-to-br from-cyan-500 to-cyan-700", text: "text-white" },
+    ];
+    
+    // Use letter to consistently assign color
+    const index = letter.charCodeAt(0) % luxuryColors.length;
+    return luxuryColors[index];
+  };
+
+  const handleLogout = () => {
+    logout(window.location.origin);
+  };
+
+  // Memoized login handler to prevent re-render issues
+  const handleLogin = useCallback(async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // Trigger login immediately (now async)
+    await login(window.location.origin);
+  }, [login]);
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 transition-all duration-300">
@@ -183,21 +164,29 @@ export default function Navbar() {
 
           {/* Authentication Section - Right */}
           <div className="flex items-center space-x-3">
-            {authLoading ? (
-              <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
-            ) : currentUser ? (
+            {isAuthenticated && user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="flex items-center space-x-2 hover:bg-gray-50 rounded-lg p-2 transition-all duration-300">
-                    <Avatar className="w-7 h-7 border-2 border-gray-200">
-                      <AvatarImage src={currentUser.image || undefined as any} />
-                      <AvatarFallback className="bg-black text-white text-xs">
-                        {getInitials(currentUser?.name)}
-                      </AvatarFallback>
-                    </Avatar>
+                  <button className="flex items-center space-x-2 hover:bg-gray-50 rounded-lg p-2 transition-all duration-300 group">
+                    {/* Profile Avatar with First Letter */}
+                    <div className="relative">
+                      <div className="w-9 h-9 rounded-lg border-2 border-gray-300 shadow-sm group-hover:border-gray-400 transition-all duration-300 overflow-hidden">
+                        {(() => {
+                          const firstLetter = getFirstLetter(user.firstName || user.name, user.email);
+                          const colorScheme = getLuxuryColor(firstLetter);
+                          return (
+                            <div className={`w-full h-full ${colorScheme.bg} flex items-center justify-center ${colorScheme.text} font-bold text-sm`}>
+                              {firstLetter}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      {/* Online indicator */}
+                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                    </div>
                     <div className="hidden md:block text-left">
                       <div className="text-sm font-medium text-gray-800">
-                        {currentUser?.name?.split(' ')[0] || 'User'}
+                        {user.firstName || user.name?.split(' ')[0] || user.email?.split('@')[0] || 'User'}
                       </div>
                     </div>
                   </button>
@@ -205,36 +194,24 @@ export default function Navbar() {
                 <DropdownMenuContent align="end" className="w-52 bg-white/95 backdrop-blur-sm border-gray-200 shadow-lg">
                   <div className="px-3 py-2">
                     <p className="text-sm font-medium text-gray-800">
-                      {currentUser?.name || 'User'}
+                      {user.name || user.email}
                     </p>
-                    <p className="text-xs text-gray-500">
-                      {currentUser?.email}
-                    </p>
+                    {user.email && (
+                      <p className="text-xs text-gray-500">
+                        {user.email}
+                      </p>
+                    )}
                   </div>
                   <DropdownMenuSeparator className="bg-gray-200" />
                   <DropdownMenuItem asChild>
-                    <Link href="/dashboard" className="flex items-center w-full px-3 py-2 text-sm hover:bg-gray-50">
-                      <User className="w-4 h-4 mr-2" />
-                      Dashboard
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
                     <Link href="/chat" className="flex items-center w-full px-3 py-2 text-sm hover:bg-gray-50">
-                      <Activity className="w-4 h-4 mr-2" />
-                      AI Assistant
+                      <User className="w-4 h-4 mr-2" />
+                      Chat
                     </Link>
                   </DropdownMenuItem>
-                  {currentUser?.rolePrimary === "ADMIN" && (
-                    <DropdownMenuItem asChild>
-                      <Link href="/admin" className="flex items-center w-full px-3 py-2 text-sm hover:bg-gray-50">
-                        <Shield className="w-4 h-4 mr-2" />
-                        Admin Dashboard
-                      </Link>
-                    </DropdownMenuItem>
-                  )}
                   <DropdownMenuSeparator className="bg-gray-200" />
                   <DropdownMenuItem
-                    onClick={async () => { await supabase.auth.signOut(); window.location.href = '/'; }}
+                    onClick={handleLogout}
                     className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50"
                   >
                     <LogOut className="w-4 h-4 mr-2" />
@@ -243,14 +220,12 @@ export default function Navbar() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <div className="flex items-center space-x-2">
-                {/* Combined Sign In / Sign Up Button */}
-                <Link href="/auth/signin">
-                  <Button className="bg-black hover:bg-gray-800 text-white px-6 py-2 rounded-full text-sm font-medium shadow-lg hover:shadow-black/25 transition-all duration-300 transform hover:scale-105">
-                    Get Started
-                  </Button>
-                </Link>
-              </div>
+              <Button 
+                className="bg-black hover:bg-gray-800 text-white px-6 py-2 rounded-full text-sm font-medium shadow-lg hover:shadow-black/25 transition-all duration-300 transform hover:scale-105"
+                onClick={handleLogin}
+              >
+                Get Started
+              </Button>
             )}
 
             {/* Mobile Menu Button */}
@@ -336,15 +311,37 @@ export default function Navbar() {
                 Donate
               </Link>
               
-              {!currentUser && (
-                <div className="pt-3 border-t border-gray-100 space-y-2">
-                  <Link href="/auth/signin" onClick={() => setIsMenuOpen(false)}>
-                    <Button className="w-full bg-black hover:bg-gray-800 text-white rounded-full">
-                      Get Started
+              <div className="pt-3 border-t border-gray-100 space-y-2">
+                {isAuthenticated ? (
+                  <>
+                    <Link href="/chat" onClick={() => setIsMenuOpen(false)}>
+                      <Button className="w-full bg-black hover:bg-gray-800 text-white rounded-full">
+                        Chat
+                      </Button>
+                    </Link>
+                    <Button 
+                      variant="outline" 
+                      className="w-full text-red-600 hover:bg-red-50"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        handleLogout();
+                      }}
+                    >
+                      Sign Out
                     </Button>
-                  </Link>
-                </div>
-              )}
+                  </>
+                ) : (
+                  <Button 
+                    className="w-full bg-black hover:bg-gray-800 text-white rounded-full"
+                    onClick={(e) => {
+                      setIsMenuOpen(false);
+                      handleLogin(e);
+                    }}
+                  >
+                    Get Started
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

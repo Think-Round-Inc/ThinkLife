@@ -13,6 +13,8 @@ import {
   RotateCcw,
   MessageSquare
 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { getUserInfo } from "@/lib/keycloak";
 
 // Import sub-components
 import AgeRestriction from "./age-restriction";
@@ -114,7 +116,31 @@ export default function ChatInterface({
     setStep("results");
   };
 
-  // Results handler
+  // Get auth state
+  const { isAuthenticated, isLoading: authLoading, login } = useAuth();
+  
+  // Get Keycloak user info for autofill
+  const [keycloakUserInfo, setKeycloakUserInfo] = useState<{
+    firstName?: string;
+    lastName?: string;
+    name?: string;
+  } | null>(null);
+  
+  useEffect(() => {
+    // Get user info from Keycloak if authenticated
+    if (isAuthenticated) {
+      const userInfo = getUserInfo();
+      if (userInfo) {
+        setKeycloakUserInfo({
+          firstName: userInfo.firstName || undefined,
+          lastName: userInfo.lastName || undefined,
+          name: userInfo.name || undefined,
+        });
+      }
+    }
+  }, [isAuthenticated]);
+
+  // Results handler - requires authentication before starting chat
   const handleStartChat = () => {
     // Prevent chat access for high ACE scores (>= 4)
     if (aceScore >= 4) {
@@ -122,6 +148,17 @@ export default function ChatInterface({
       return;
     }
     
+    // Check if user is authenticated
+    if (!authLoading && !isAuthenticated) {
+      // Trigger Keycloak login, redirect back to landing page after authentication
+      // User can then navigate to healing rooms or chat from there
+      (async () => {
+        await login(window.location.origin);
+      })();
+      return;
+    }
+    
+    // If authenticated, proceed to chat
     setStep("chat");
     // Clear any existing session to start fresh
     setSessionId(null);
@@ -444,6 +481,13 @@ I'm here to listen and support you. What's on your mind today?`;
           <UserInfoForm 
             onSubmit={handleUserInfoSubmit} 
             onAgeRestriction={() => setStep("ageRestriction")}
+            profile={keycloakUserInfo ? {
+              id: "",
+              name: keycloakUserInfo.name || null,
+              firstName: keycloakUserInfo.firstName || null,
+              lastName: keycloakUserInfo.lastName || null,
+              dateOfBirth: null,
+            } : null}
           />
         </div>
       );

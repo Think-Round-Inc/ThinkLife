@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import ExperienceForm from './experience-form';
-import ExperienceDisplay from './experience-display';
+import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 import { 
   Heart, 
   Brain, 
@@ -24,31 +24,37 @@ import {
   Target
 } from 'lucide-react';
 
+// Explore Features Button Component
+function ExploreFeaturesButton() {
+  const { isAuthenticated, isLoading, login } = useAuth();
+  const router = useRouter();
+
+  const handleClick = async () => {
+    if (isLoading) return;
+    
+    if (isAuthenticated) {
+      // If authenticated, go to healing rooms
+      router.push("/healing-rooms");
+    } else {
+      // If not authenticated, trigger Keycloak login
+      // After login, redirect to landing page
+      await login(window.location.origin);
+    }
+  };
+
+  return (
+    <Button 
+      className="bg-black hover:bg-gray-800 text-white px-8 py-4 rounded-full text-lg font-medium shadow-lg hover:shadow-black/25 transition-all duration-300 transform hover:scale-105"
+      onClick={handleClick}
+      disabled={isLoading}
+    >
+      {isLoading ? "Loading..." : "Explore Experimental Features"}
+    </Button>
+  );
+}
+
 export default function ModernLanding() {
   const [mounted, setMounted] = useState(false);
-
-  const benefits = [
-    {
-      icon: Shield,
-      title: "Trauma-Informed Care",
-      description: "Every interaction is designed with safety, trust, and emotional well-being at the core."
-    },
-    {
-      icon: Brain,
-      title: "Ethical AI",
-      description: "We prioritize human dignity and responsible AI development in everything we create."
-    },
-    {
-      icon: Users,
-      title: "Community Connection",
-      description: "Building bridges between diverse communities through shared values and understanding."
-    },
-    {
-      icon: Globe,
-      title: "Global Impact",
-      description: "Creating positive change that reaches communities worldwide."
-    }
-  ];
 
   const services = [
     {
@@ -97,77 +103,48 @@ export default function ModernLanding() {
     <div className="min-h-screen bg-white">
       {/* Hero Section */}
       <section className="relative pt-32 pb-20 px-6 md:px-12 lg:px-24">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-            {/* Left Content */}
-            <div className="max-w-xl">
-              {/* Badge */}
-              <div className="inline-flex items-center bg-gray-100 rounded-full px-4 py-2 mb-8">
-                <span className="text-black font-medium text-sm tracking-wide uppercase">
-                  AI FOR HUMANITY
-                </span>
+        <div className="max-w-4xl mx-auto text-center">
+          {/* Badge */}
+          <div className="inline-flex items-center bg-gray-100 rounded-full px-4 py-2 mb-8">
+            <span className="text-black font-medium text-sm tracking-wide uppercase">
+              AI FOR HUMANITY
+            </span>
+          </div>
+
+          {/* Main Heading */}
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight text-gray-900">
+            ThinkLife
+          </h1>
+
+          {/* Experimental Notice */}
+          <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6 rounded-r-lg max-w-2xl mx-auto">
+            <div className="flex items-start justify-center">
+              <div className="flex-shrink-0">
+                <Sparkles className="w-5 h-5 text-amber-600" />
               </div>
-
-              {/* Main Heading */}
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight text-gray-900">
-                Finally Find Peace Of Mind
-              </h1>
-
-              {/* Subtitle */}
-              <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-                Helping you navigate life's challenges with wisdom, compassion, and inner peace through ethical AI and human-centered care.
-              </p>
-
-              {/* CTA Button */}
-              <Button className="bg-black hover:bg-gray-800 text-white px-8 py-4 rounded-full text-lg font-medium shadow-lg hover:shadow-black/25 transition-all duration-300 transform hover:scale-105">
-                Start Your Journey
-              </Button>
-            </div>
-
-            {/* Right Image - Meditation Group */}
-            <div className="hidden lg:flex justify-end">
-              <div className="relative p-4 bg-white rounded-2xl border-2 border-gray-200 shadow-lg">
-                {/* Main Image Container */}
-                <div className="w-80 h-96 overflow-hidden rounded-xl">
-                  <img 
-                    src="/meditation-group.jpg" 
-                    alt="Mindfulness and meditation community session"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
+              <div className="ml-3">
+                <p className="text-sm font-semibold text-amber-900 mb-1">
+                  Experimental Platform
+                </p>
+                <p className="text-sm text-amber-800">
+                  Created by the Generative AI Engineers team at Think Round, Inc.
+                </p>
               </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Benefits Section */}
-      <section className="py-20 px-6 md:px-12 lg:px-24">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Why Choose ThinkLife?
-            </h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Everything we do is guided by fundamental principles that put human wellbeing first.
+          {/* Description */}
+          <div className="space-y-4 mb-8 max-w-3xl mx-auto">
+            <p className="text-lg text-gray-700 leading-relaxed">
+              ThinkLife is currently used for <strong className="text-gray-900">local development and internal testing only</strong>. It serves as a sandbox environment to design, refine, and validate new AI-driven experiences before they are exposed to real users.
+            </p>
+            <p className="text-lg text-gray-700 leading-relaxed">
+              This site showcases <strong className="text-gray-900">pre-release and beta versions</strong> of AI applications that are still under active development and review. Only the most stable, responsible, and impactful of these applications will move forward into the first public web release after formal approval from Think Round's leadership.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {benefits.map((benefit, index) => (
-              <div key={index} className="text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-6">
-                  <benefit.icon className="w-8 h-8 text-black" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">
-                  {benefit.title}
-                </h3>
-                <p className="text-gray-600 leading-relaxed">
-                  {benefit.description}
-                </p>
-              </div>
-            ))}
-          </div>
+          {/* CTA Button */}
+          <ExploreFeaturesButton />
         </div>
       </section>
 
@@ -400,33 +377,20 @@ export default function ModernLanding() {
         `}</style>
       </section>
 
-      {/* Community Experiences Section */}
+      {/* Community Section */}
       <section className="py-20 px-6 md:px-12 lg:px-24 bg-white">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              What Our Community Says
+              Join Our Community
             </h2>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Real stories from people who have experienced transformation through our platform.
+              Connect with others who are on their journey to healing and personal growth.
             </p>
           </div>
 
-          {/* Experience Display */}
-          <div className="mb-20">
-            <ExperienceDisplay initialLimit={6} showPagination={true} compact={false} />
-          </div>
-
-          {/* Experience Submission Form */}
-          <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-12">
-              <h3 className="text-2xl font-bold text-black mb-4">Share Your Story</h3>
-              <p className="text-gray-600 max-w-xl mx-auto">
-                Your experience could inspire and help others on their journey. We'd love to hear from you.
-              </p>
-            </div>
-            
-            <ExperienceForm />
+          <div className="max-w-4xl mx-auto text-center">
+            <ExploreFeaturesButton />
           </div>
         </div>
       </section>

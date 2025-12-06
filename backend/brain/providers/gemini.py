@@ -7,36 +7,6 @@ from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Optional LangFuse imports - gracefully handle compatibility issues
-try:
-    from langfuse.decorators import observe, langfuse_context
-    LANGFUSE_AVAILABLE = True
-except (ImportError, Exception) as e:
-    logger.warning(f"LangFuse not available: {e}. Continuing without observability.")
-    LANGFUSE_AVAILABLE = False
-    
-    # Create no-op decorators and context
-    def observe(name=None, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    class LangfuseContext:
-        def update_current_trace(self, **kwargs):
-            pass
-        def update_current_observation(self, **kwargs):
-            pass
-        def observe_llm_call(self, **kwargs):
-            class NoOpContext:
-                def __enter__(self):
-                    return self
-                def __exit__(self, *args):
-                    pass
-                def update(self, **kwargs):
-                    pass
-            return NoOpContext()
-    
-    langfuse_context = LangfuseContext()
 
 from ..specs import ProviderSpec
 from .provider_registry import get_provider_registry
@@ -95,7 +65,6 @@ class GeminiProvider:
             return False
         return True
     
-    @observe(name="gemini_generate_response")
     async def generate_response(
         self, 
         messages: List[Dict[str, str]], 
@@ -118,19 +87,7 @@ class GeminiProvider:
             gen_config = self._build_request_params(kwargs)
             model = self.config.get("model", "gemini-1.5-flash")
             
-            # Track in LangFuse
-            langfuse_context.update_current_trace(
-                name="gemini_provider_call",
-                metadata={
-                    "provider": "gemini",
-                    "model": model,
-                    "message_count": len(messages),
-                    "temperature": gen_config.get("temperature"),
-                    "max_output_tokens": gen_config.get("max_output_tokens")
-                }
-            )
-            
-            # Make Gemini API call (LangFuse observation is handled by @observe decorator on the method)
+            # Make Gemini API call
             try:
                 chat = self.model.start_chat(history=[])
                 response = await chat.send_message_async(user_message, generation_config=gen_config)
@@ -138,15 +95,6 @@ class GeminiProvider:
             except Exception as api_error:
                 logger.error(f"Gemini API call failed: {api_error}")
                 raise
-            
-            # Update LangFuse with response metadata
-            if hasattr(response, 'usage_metadata'):
-                langfuse_context.update_current_observation(
-                    metadata={
-                        "prompt_token_count": getattr(response.usage_metadata, 'prompt_token_count', None),
-                        "candidates_token_count": getattr(response.usage_metadata, 'candidates_token_count', None),
-                    }
-                )
             
             return {
                 "content": content,
@@ -158,11 +106,6 @@ class GeminiProvider:
             }
         except Exception as e:
             logger.error(f"Gemini request failed: {e}")
-            langfuse_context.update_current_observation(
-                level="ERROR",
-                status_message=str(e),
-                metadata={"error": str(e)}
-            )
             return self._error_response(str(e))
     
     def _build_request_params(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:

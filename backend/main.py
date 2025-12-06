@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -24,44 +24,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize LangFuse for tracing (must be done before importing modules that use decorators)
-# The decorators module reads from environment variables, so we need to ensure they're loaded
-langfuse_client = None
-try:
-    from langfuse import Langfuse
-    from langfuse.decorators import langfuse_context
-    import os
-    
-    # Re-check env vars after load_dotenv (in case they were set)
-    langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
-    langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY")
-    langfuse_host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
-    
-    if langfuse_public_key and langfuse_secret_key:
-        # Initialize client for manual operations only (flushing)
-        # Decorators automatically use credentials from environment variables
-        langfuse_client = Langfuse(
-            public_key=langfuse_public_key,
-            secret_key=langfuse_secret_key,
-            host=langfuse_host,
-            debug=os.getenv("LANGFUSE_DEBUG", "false").lower() == "true"
-        )
-        
-        logger.info(f"LangFuse tracing enabled (host: {langfuse_host})")
-        logger.info(f"   Public key: {langfuse_public_key[:20]}...")
-        logger.info("   @observe decorators will auto-capture LLM calls")
-    else:
-        logger.warning("LangFuse credentials not found - tracing disabled")
-        logger.warning("   Add to .env file:")
-        logger.warning("   LANGFUSE_PUBLIC_KEY=pk-lf-...")
-        logger.warning("   LANGFUSE_SECRET_KEY=sk-lf-...")
-        langfuse_client = None
-except ImportError:
-    logger.warning("LangFuse not installed. Install with: pip install langfuse")
-    langfuse_client = None
-except Exception as e:
-    logger.error(f"LangFuse initialization failed: {e}", exc_info=True)
-    langfuse_client = None
+
 
 # Import Brain system
 from brain import CortexFlow
@@ -113,14 +76,6 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down ThinkLife Backend...")
     
-    # Flush LangFuse traces before shutdown
-    if langfuse_client:
-        try:
-            langfuse_client.flush()
-            logger.info("LangFuse traces flushed")
-        except Exception as e:
-            logger.warning(f"Failed to flush LangFuse traces: {e}")
-    
     if brain_instance:
         await brain_instance.shutdown()
     
@@ -152,6 +107,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Add Keycloak authentication middleware
+from middleware.keycloak_auth import KeycloakAuthMiddleware
+app.add_middleware(KeycloakAuthMiddleware)
 
 
 
@@ -209,7 +168,9 @@ async def brain_options():
 
 @app.post("/api/brain", response_model=APIBrainResponse)
 async def process_brain_request(
-    request: APIBrainRequest, brain: CortexFlow = Depends(get_brain)
+    request: APIBrainRequest, 
+    brain: CortexFlow = Depends(get_brain),
+    http_request: Request = None
 ) -> APIBrainResponse:
     """
     Process a request through the ThinkLife Brain system
@@ -234,25 +195,34 @@ async def process_brain_request(
                 detail=f"Invalid application. Must be one of: {valid_applications}",
             )
 
+        # Get user context from Keycloak session (from middleware)
+        from middleware.keycloak_auth import get_user_context, extract_token_from_header, extract_token_from_cookie
+        keycloak_user_context = get_user_context(http_request) if http_request else {}
+        
+        # Extract token from request if available
+        token = None
+        if http_request:
+            token = extract_token_from_header(http_request) or extract_token_from_cookie(http_request)
+        
+        # Merge user contexts - Keycloak session takes precedence
+        merged_user_context = {**request.user_context, **keycloak_user_context}
+        
+        # Add token to metadata if available
+        metadata = request.metadata or {}
+        if token:
+            metadata["token"] = token
+        
         # Prepare Brain request
         brain_request_data = {
             "id": request.session_id,
             "message": request.message,
             "application": request.application,
-            "user_context": request.user_context,
-            "metadata": request.metadata or {},
+            "user_context": merged_user_context,
+            "metadata": metadata,
         }
 
         # Process with Brain
         response_data = await brain.process_request(brain_request_data)
-        
-        # Flush LangFuse traces after each request to ensure they're sent immediately
-        if langfuse_client:
-            try:
-                langfuse_client.flush()
-                logger.debug("LangFuse traces flushed after request")
-            except Exception as e:
-                logger.warning(f"Failed to flush LangFuse traces: {e}")
 
         # Return formatted response
         return APIBrainResponse(
@@ -304,6 +274,134 @@ async def get_brain_analytics(brain: CortexFlow = Depends(get_brain)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Session management endpoints
+@app.post("/api/session/logout")
+async def logout_session(
+    http_request: Request,
+    session_id: Optional[str] = None
+):
+    """
+    End a user session (logout)
+    Can be called with session_id or will use session from token
+    """
+    try:
+        from middleware.keycloak_auth import get_user_context
+        from brain.guardrails import SessionManager
+        
+        user_context = get_user_context(http_request)
+        session_manager = SessionManager()
+        
+        # Get session_id from request or user_context
+        if not session_id:
+            session_id = user_context.get("session_id")
+        
+        user_id = user_context.get("user_id")
+        token = getattr(http_request.state, "token", None)
+        
+        # Extract token_state from token if available
+        token_state = None
+        if token:
+            try:
+                import jwt
+                decoded = jwt.decode(token, options={"verify_signature": False})
+                token_state = decoded.get("session_state")
+            except:
+                pass
+        
+        # End session
+        success = session_manager.end_session(
+            session_id=session_id,
+            user_id=user_id if not session_id else None,
+            token_state=token_state if not session_id else None
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Session ended successfully",
+                "timestamp": datetime.now().isoformat(),
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Session not found or already ended",
+                "timestamp": datetime.now().isoformat(),
+            }
+    
+    except Exception as e:
+        logger.error(f"Error ending session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/session/stats")
+async def get_session_stats():
+    """Get session statistics for tracking"""
+    try:
+        from brain.guardrails import SessionManager
+        
+        session_manager = SessionManager()
+        stats = session_manager.get_session_stats()
+        
+        return {
+            "success": True,
+            "data": stats,
+            "timestamp": datetime.now().isoformat(),
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting session stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/session/user/{user_id}")
+async def get_user_sessions(user_id: str, include_ended: bool = False):
+    """Get all sessions for a user"""
+    try:
+        from brain.guardrails import SessionManager
+        
+        session_manager = SessionManager()
+        sessions = session_manager.get_user_sessions(user_id, include_ended=include_ended)
+        
+        return {
+            "success": True,
+            "data": {
+                "user_id": user_id,
+                "sessions": sessions,
+                "count": len(sessions)
+            },
+            "timestamp": datetime.now().isoformat(),
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting user sessions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/session/{session_id}")
+async def get_session(session_id: str):
+    """Get session details by ID"""
+    try:
+        from brain.guardrails import SessionManager
+        
+        session_manager = SessionManager()
+        session = session_manager.get_session(session_id)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        return {
+            "success": True,
+            "data": session.to_dict(),
+            "timestamp": datetime.now().isoformat(),
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Zoe AI Companion endpoints
 @app.options("/api/zoe/chat")
 async def zoe_chat_options():
@@ -312,7 +410,11 @@ async def zoe_chat_options():
 
 
 @app.post("/api/zoe/chat")
-async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeService = Depends(get_zoe)):
+async def zoe_chat_endpoint(
+    request: Dict[str, Any], 
+    zoe: ZoeService = Depends(get_zoe),
+    http_request: Request = None
+):
     """
     Chat with Zoe AI Companion
 
@@ -324,11 +426,16 @@ async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeService = Depends(g
         if not isinstance(request, dict):
             raise HTTPException(status_code=400, detail="Invalid request format")
 
+        # Get user context from Keycloak session (from middleware)
+        from middleware.keycloak_auth import get_user_context, get_user_id
+        keycloak_user_context = get_user_context(http_request) if http_request else {}
+        keycloak_user_id = get_user_id(http_request) if http_request else None
+        
         # Extract request data
         message = request.get("message", "")
-        user_id = request.get("user_id", "anonymous")
+        user_id = keycloak_user_id or request.get("user_id", "anonymous")
         session_id = request.get("session_id")
-        user_context = request.get("user_context", {})
+        user_context = {**request.get("user_context", {}), **keycloak_user_context}
 
         # Check ACE score restriction - prevent chat access for scores >= 4
         ace_score = user_context.get("ace_score", 0)
@@ -357,14 +464,6 @@ async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeService = Depends(g
             user_context=user_context,
             application="chatbot"
         )
-        
-        # Flush LangFuse traces after each request to ensure they're sent
-        if langfuse_client:
-            try:
-                langfuse_client.flush()
-                logger.debug("LangFuse traces flushed after request")
-            except Exception as e:
-                logger.warning(f"Failed to flush LangFuse traces: {e}")
 
         return response
 
@@ -377,14 +476,17 @@ async def zoe_chat_endpoint(request: Dict[str, Any], zoe: ZoeService = Depends(g
 async def get_zoe_user_sessions(
     user_id: str, limit: int = 10, zoe: ZoeService = Depends(get_zoe)
 ):
-    """Get recent Zoe sessions for a user"""
+    """
+    Get user sessions - sessions are managed by brain's unified session system
+    Use /api/session/user/{user_id} instead
+    """
     try:
-        # Note: This method needs to be implemented in ZoeService if needed
-        # For now, return empty list
+        # Sessions are managed by brain, not Zoe
+        # Redirect to brain's session endpoint
         return {
             "success": True,
             "sessions": [],
-            "message": "Session listing not yet implemented",
+            "message": "Sessions are managed by brain's unified session system. Use /api/session/user/{user_id}",
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
@@ -394,12 +496,16 @@ async def get_zoe_user_sessions(
 
 @app.get("/api/zoe/sessions/{session_id}/history")
 async def get_zoe_session_history(session_id: str, zoe: ZoeService = Depends(get_zoe)):
-    """Get conversation history for a Zoe session"""
+    """
+    Get conversation history for a Zoe session
+    Uses session_id from brain's unified session management
+    """
     try:
         history = zoe.get_conversation_history(session_id)
         return {
             "success": True,
             "history": history,
+            "session_id": session_id,
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
@@ -409,16 +515,22 @@ async def get_zoe_session_history(session_id: str, zoe: ZoeService = Depends(get
 
 @app.delete("/api/zoe/sessions/{session_id}")
 async def end_zoe_session(session_id: str, zoe: ZoeService = Depends(get_zoe)):
-    """End a Zoe conversation session"""
+    """
+    Clear conversation history for a Zoe session
+    Note: Session lifecycle is managed by brain's unified session system
+    This only clears the conversation history, not the session itself
+    """
     try:
         zoe.clear_conversation(session_id)
         return {
             "success": True,
-            "message": "Session ended successfully",
+            "message": "Conversation history cleared successfully",
+            "session_id": session_id,
+            "note": "Session lifecycle is managed by brain's unified session system",
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
-        logger.error(f"Error ending Zoe session: {str(e)}")
+        logger.error(f"Error clearing Zoe conversation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -627,45 +739,6 @@ async def health_check():
 
 
 # Root endpoint
-@app.get("/api/langfuse/status")
-async def langfuse_status():
-    """Check LangFuse configuration and status"""
-    try:
-        from langfuse.decorators import langfuse_context
-        import os
-        
-        status = {
-            "configured": False,
-            "client_initialized": langfuse_client is not None,
-            "decorator_client": langfuse_context.client_instance is not None,
-            "environment_variables": {
-                "LANGFUSE_PUBLIC_KEY": "SET" if os.getenv("LANGFUSE_PUBLIC_KEY") else "NOT SET",
-                "LANGFUSE_SECRET_KEY": "SET" if os.getenv("LANGFUSE_SECRET_KEY") else "NOT SET",
-                "LANGFUSE_HOST": os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
-            }
-        }
-        
-        if langfuse_client:
-            status["configured"] = True
-            status["tracing_enabled"] = getattr(langfuse_client, 'tracing_enabled', None)
-            status["host"] = getattr(langfuse_client, 'host', None)
-        
-        if langfuse_context.client_instance:
-            status["decorator_configured"] = True
-        
-        return {
-            "success": True,
-            "langfuse": status,
-            "message": "LangFuse is configured and ready" if status["configured"] else "LangFuse credentials not found"
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Error checking LangFuse status"
-        }
-
-
 @app.get("/")
 async def root():
     """Root endpoint"""
@@ -678,7 +751,6 @@ async def root():
             "brain": "/api/brain",
             "brain_health": "/api/brain/health",
             "brain_analytics": "/api/brain/analytics",
-            "langfuse_status": "/api/langfuse/status",
             "zoe": {
                 "chat": "/api/zoe/chat",
                 "health": "/api/zoe/health",

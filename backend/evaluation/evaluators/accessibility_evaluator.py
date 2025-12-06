@@ -129,29 +129,29 @@ class AccessibilityEvaluator:
     def _build_evaluation_prompt(self, user_message: str, bot_message: str) -> str:
         """Build evaluation prompt for accessibility assessment"""
         return f"""
-Evaluate the language accessibility and clarity of this bot response for someone seeking emotional support.
+            Evaluate the language accessibility and clarity of this bot response for someone seeking emotional support.
 
-USER MESSAGE: "{user_message}"
-BOT RESPONSE: "{bot_message}"
+            USER MESSAGE: "{user_message}"
+            BOT RESPONSE: "{bot_message}"
 
-Consider these aspects:
-1. Language Clarity: Is the language clear and easy to understand?
-2. Emotional Accessibility: Would this make sense to someone in emotional distress?
-3. Complexity: Are there unnecessarily complex or confusing terms?
-4. Tone Appropriateness: Is the tone appropriate for the emotional context?
-5. Sentence Structure: Are sentences well-structured and easy to follow?
-6. Cultural Sensitivity: Does it avoid jargon and culturally-specific references?
+            Consider these aspects:
+            1. Language Clarity: Is the language clear and easy to understand?
+            2. Emotional Accessibility: Would this make sense to someone in emotional distress?
+            3. Complexity: Are there unnecessarily complex or confusing terms?
+            4. Tone Appropriateness: Is the tone appropriate for the emotional context?
+            5. Sentence Structure: Are sentences well-structured and easy to follow?
+            6. Cultural Sensitivity: Does it avoid jargon and culturally-specific references?
 
-Return ONLY valid JSON:
-{{
-    "accessibility_score": <number between 0.0 and 1.0>,
-    "reasoning": "<brief explanation of the score>",
-    "clarity_score": <number 0.0-1.0>,
-    "complexity_score": <number 0.0-1.0>,
-    "tone_appropriateness_score": <number 0.0-1.0>,
-    "suggestions": ["<improvement 1>", "<improvement 2>"] or []
-}}
-"""
+            Return ONLY valid JSON:
+            {{
+                "accessibility_score": <number between 0.0 and 1.0>,
+                "reasoning": "<brief explanation of the score>",
+                "clarity_score": <number 0.0-1.0>,
+                "complexity_score": <number 0.0-1.0>,
+                "tone_appropriateness_score": <number 0.0-1.0>,
+                "suggestions": ["<improvement 1>", "<improvement 2>"] or []
+            }}
+        """
 
     async def _call_llm(self, prompt: str) -> str:
         """Call LLM for evaluation"""

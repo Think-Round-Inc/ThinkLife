@@ -4,8 +4,10 @@ Handles authentication, rate limiting, content filtering, and security validatio
 """
 
 from .security_manager import SecurityManager
+from .session_manager import SessionManager
 
 __all__ = [
     "SecurityManager",
+    "SessionManager",
 ]
 

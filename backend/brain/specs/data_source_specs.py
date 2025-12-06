@@ -12,11 +12,11 @@ from enum import Enum
 class DataSourceType(str, Enum):
     """Types of data sources"""
     VECTOR_DB = "vector_db"
-    FILE_SYSTEM = "file_system"
-    WEB_SEARCH = "web_search"
-    DATABASE = "database"
-    API = "api"
-    MEMORY = "memory"
+    #FILE_SYSTEM = "file_system"
+    #WEB_SEARCH = "web_search"
+    #DATABASE = "database"
+    #API = "api"
+    #MEMORY = "memory"
     CONVERSATION_HISTORY = "conversation_history"
 
 

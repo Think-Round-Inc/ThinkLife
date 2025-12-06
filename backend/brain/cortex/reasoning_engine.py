@@ -8,36 +8,6 @@ from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Optional LangFuse imports - gracefully handle compatibility issues
-try:
-    from langfuse.decorators import observe, langfuse_context
-    LANGFUSE_AVAILABLE = True
-except (ImportError, Exception) as e:
-    logger.warning(f"LangFuse not available: {e}. Continuing without observability.")
-    LANGFUSE_AVAILABLE = False
-    
-    # Create no-op decorators and context
-    def observe(name=None, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    class LangfuseContext:
-        def update_current_trace(self, **kwargs):
-            pass
-        def update_current_observation(self, **kwargs):
-            pass
-        def observe_llm_call(self, **kwargs):
-            class NoOpContext:
-                def __enter__(self):
-                    return self
-                def __exit__(self, *args):
-                    pass
-                def update(self, **kwargs):
-                    pass
-            return NoOpContext()
-    
-    langfuse_context = LangfuseContext()
 
 from ..specs import BrainRequest, ProviderSpec, ToolSpec, DataSourceSpec
 from ..providers import create_provider, get_provider_registry
@@ -65,7 +35,6 @@ class ReasoningEngine:
         # They're ready to use immediately
         logger.info("Reasoning Engine initialized")
     
-    @observe(name="reasoning_decide_next_step")
     async def decide_next_step(
         self,
         request: BrainRequest,
@@ -79,20 +48,19 @@ class ReasoningEngine:
         - Available tools/data sources/ providers
         - Execution history
         - Context data
+        - User session info (from Keycloak)
         """
-        # Track in LangFuse
-        langfuse_context.update_current_trace(
-            name="reasoning_engine",
-            metadata={
-                "reasoning_type": "decide_next_step",
-                "session_id": request.user_context.session_id if hasattr(request, 'user_context') else None
-            }
-        )
-        
-        # Build reasoning prompt
+        # Build reasoning prompt with user context
         reasoning_prompt = self._build_reasoning_prompt(
             request, context, execution_history
         )
+        
+        # Extract user info from Keycloak session for reasoning
+        user_info = self._extract_user_info_for_reasoning(request.user_context)
+        if user_info:
+            user_context_section = self._build_user_context_for_reasoning(user_info)
+            if user_context_section:
+                reasoning_prompt = f"{user_context_section}\n\n{reasoning_prompt}"
         
         # Use LLM to reason
         provider = await self._create_provider(provider_spec)
@@ -108,24 +76,12 @@ class ReasoningEngine:
             # Parse LLM decision
             decision = self._parse_decision(response.get("content", ""))
             
-            # Track decision in LangFuse
-            langfuse_context.update_current_observation(
-                output=decision,
-                metadata={"action": decision.get("action"), "success": True}
-            )
-            
             return decision
             
         except Exception as e:
             logger.error(f"Reasoning failed: {e}")
-            langfuse_context.update_current_observation(
-                level="ERROR",
-                status_message=str(e),
-                metadata={"success": False, "error": str(e)}
-            )
             return {"action": "error", "reason": str(e)}
     
-    @observe(name="reasoning_select_tools")
     async def select_tools(
         self,
         request: BrainRequest,
@@ -133,15 +89,6 @@ class ReasoningEngine:
         available_tools: List[str]
     ) -> List[ToolSpec]:
         """Use LLM to select relevant tools for the task"""
-        # Track in LangFuse
-        langfuse_context.update_current_trace(
-            name="reasoning_engine",
-            metadata={
-                "reasoning_type": "select_tools",
-                "available_tools_count": len(available_tools)
-            }
-        )
-        
         tool_descriptions = self.tool_registry.get_tool_descriptions()
         
         prompt = f"""
@@ -166,24 +113,12 @@ Select the most relevant tools to use. Reply with tool names only, one per line.
             selected = self._parse_tool_selection(response.get("content", ""))
             tools = [ToolSpec(name=tool) for tool in selected if tool in available_tools]
             
-            # Track selection in LangFuse
-            langfuse_context.update_current_observation(
-                output={"selected_tools": [t.name for t in tools]},
-                metadata={"tools_selected": len(tools), "success": True}
-            )
-            
             return tools
             
         except Exception as e:
             logger.error(f"Tool selection failed: {e}")
-            langfuse_context.update_current_observation(
-                level="ERROR",
-                status_message=str(e),
-                metadata={"success": False}
-            )
             return []
     
-    @observe(name="reasoning_refine_plan")
     async def refine_plan(
         self,
         original_request: BrainRequest,
@@ -192,15 +127,6 @@ Select the most relevant tools to use. Reply with tool names only, one per line.
         remaining_iterations: int
     ) -> Dict[str, Any]:
         """Use LLM to refine execution plan based on results"""
-        # Track in LangFuse
-        langfuse_context.update_current_trace(
-            name="reasoning_engine",
-            metadata={
-                "reasoning_type": "refine_plan",
-                "remaining_iterations": remaining_iterations
-            }
-        )
-        
         prompt = f"""
 Original request: "{original_request.message}"
 
@@ -229,21 +155,10 @@ Provide reasoning and recommendation.
             
             refinement = self._parse_plan_refinement(response.get("content", ""))
             
-            # Track refinement in LangFuse
-            langfuse_context.update_current_observation(
-                output=refinement,
-                metadata={"action": refinement.get("action"), "success": True}
-            )
-            
             return refinement
             
         except Exception as e:
             logger.error(f"Plan refinement failed: {e}")
-            langfuse_context.update_current_observation(
-                level="ERROR",
-                status_message=str(e),
-                metadata={"success": False}
-            )
             return {"action": "continue", "reason": str(e)}
     
     def _build_reasoning_prompt(
@@ -306,6 +221,60 @@ Based on the above, what should be the next action?
         """Format results for prompt"""
         return str(results)
     
+    def _extract_user_info_for_reasoning(self, user_context) -> Optional[Dict[str, Any]]:
+        """Extract user information from Keycloak session for reasoning"""
+        if not user_context:
+            return None
+        
+        # Convert dataclass to dict if needed
+        from dataclasses import asdict
+        if hasattr(user_context, '__dataclass_fields__'):
+            context_dict = asdict(user_context)
+        else:
+            context_dict = dict(user_context) if isinstance(user_context, dict) else {}
+        
+        # Only include info if user is authenticated via Keycloak
+        if not context_dict.get("is_authenticated") or context_dict.get("auth_provider") != "keycloak":
+            return None
+        
+        user_info = {
+            "user_id": context_dict.get("user_id"),
+            "session_id": context_dict.get("session_id"),
+        }
+        
+        # Add relevant info for reasoning
+        if context_dict.get("roles"):
+            user_info["roles"] = context_dict.get("roles", [])
+        
+        # Add user profile info if available
+        user_profile = context_dict.get("user_profile")
+        if user_profile:
+            if isinstance(user_profile, dict):
+                if user_profile.get("ace_score") is not None:
+                    user_info["ace_score"] = user_profile.get("ace_score")
+            elif hasattr(user_profile, 'ace_score'):
+                user_info["ace_score"] = user_profile.ace_score
+        
+        return user_info if len(user_info) > 2 else None
+    
+    def _build_user_context_for_reasoning(self, user_info: Dict[str, Any]) -> str:
+        """Build user context section for reasoning prompts"""
+        parts = []
+        
+        if user_info.get("roles"):
+            roles = ", ".join(user_info.get("roles", []))
+            if roles:
+                parts.append(f"User roles: {roles}")
+        
+        if user_info.get("ace_score") is not None:
+            ace_score = user_info.get("ace_score")
+            parts.append(f"User ACE score: {ace_score} (trauma-informed context)")
+        
+        if parts:
+            return "User Context (for decision-making):\n" + "\n".join(f"- {part}" for part in parts)
+        
+        return ""
+    
     async def _create_provider(self, provider_spec: ProviderSpec):
         """Create provider instance"""
         # Validate provider spec
@@ -335,7 +304,6 @@ Based on the above, what should be the next action?
             logger.error(f"Provider creation failed: {e}")
             return None
     
-    @observe(name="reasoning_optimize_specs")
     async def optimize_execution_specs(
         self,
         original_specs: Any,  # AgentExecutionSpec
@@ -358,15 +326,6 @@ Based on the above, what should be the next action?
             }
         """
         logger.info("Reasoning engine optimizing execution specs")
-        
-        # Track in LangFuse
-        langfuse_context.update_current_trace(
-            name="reasoning_engine",
-            metadata={
-                "reasoning_type": "optimize_execution_specs",
-                "session_id": request.user_context.session_id if hasattr(request, 'user_context') else None
-            }
-        )
         
         try:
             # For high-level implementation, we'll do basic optimization

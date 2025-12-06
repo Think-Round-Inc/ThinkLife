@@ -104,7 +104,7 @@ class ExecutionPlan:
     # Whether reasoning was applied
     reasoning_applied: bool
     
-    # Reasoning confidence (0.0-1.0)
+    # Reasoning confidence
     confidence: float
     
     # Reasoning notes and suggestions

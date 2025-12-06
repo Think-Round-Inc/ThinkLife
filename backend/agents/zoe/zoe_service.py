@@ -84,7 +84,6 @@ class ZoeService:
             logger.error(f"Failed to initialize ZoeService: {e}")
             return False
     
-    @observe(name="zoe_process_message")
     async def process_message(
         self,
         message: str,
@@ -99,30 +98,23 @@ class ZoeService:
         Args:
             message: User's message
             user_id: User identifier
-            session_id: Optional session ID
-            user_context: Optional user context (ace_score, etc.)
+            session_id: Session ID from brain's unified session management
+            user_context: Optional user context (ace_score, etc.) - should include session_id
             application: Application type
         
         Returns:
             Dictionary with response and metadata
         """
-        # Update trace with Zoe-specific metadata
-        langfuse_context.update_current_trace(
-            name="zoe_conversation",
-            user_id=user_id,
-            session_id=session_id,
-            metadata={
-                "agent": "zoe",
-                "application": application,
-                "message_length": len(message),
-                "has_user_context": user_context is not None
-            }
-        )
+        # NOTE: Tracing is handled by cortex.py - no decorator here to avoid duplicate traces
         
         if not self.initialized:
             await self.initialize()
         
         try:
+            # Use session_id from user_context if not provided directly
+            if not session_id and user_context:
+                session_id = user_context.get("session_id")
+            
             # 1. Create BrainRequest using ZoeCore helper
             request_data = self.zoe_core.create_brain_request(
                 message=message,

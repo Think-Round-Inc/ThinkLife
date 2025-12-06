@@ -2,10 +2,12 @@
 Security Manager for ThinkLife Brain
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import logging
 import re
+
+from .session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,9 @@ class SecurityManager:
         self.rate_limits = {}  # user_id -> rate limit data
         self.blocked_words = self.config.get("content_filtering", {}).get("blocked_words", [])
         self.trauma_safe_mode = self.config.get("content_filtering", {}).get("trauma_safe_mode", True)
+        
+        # Initialize session manager for Keycloak authentication
+        self.session_manager = SessionManager(self.config.get("session", {}))
     
     def _get_default_config(self):
         """Get default security configuration"""
@@ -40,7 +45,7 @@ class SecurityManager:
             }
         }
     
-    def check_rate_limit(self, user_id: str) -> bool:
+    def check_rate_limit(self, user_id: str, user_context: Optional[Dict[str, Any]] = None) -> bool:
         """Check if user has exceeded rate limits"""
         if not self.config.get("rate_limiting", {}).get("enabled", True):
             return True
@@ -85,6 +90,10 @@ class SecurityManager:
         user_limits["requests_this_minute"].append(now)
         user_limits["requests_this_hour"].append(now)
         
+        # Log rate limit check with user context if available
+        if user_context:
+            logger.debug(f"Rate limit check for user {user_id} (authenticated: {user_context.get('authenticated', False)})")
+        
         return True
     
     def filter_content(self, content: str) -> Dict[str, Any]:
@@ -127,19 +136,62 @@ class SecurityManager:
             "original_content": original_content
         }
     
-    def validate_user(self, user_context: Dict[str, Any]) -> bool:
-        """Validate user authentication and permissions"""
+    def validate_user(self, user_context: Dict[str, Any], token: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Validate user authentication and permissions using unified session tracking
+        
+        Returns:
+            Dict with validation result and updated user_context
+        """
         config = self.config.get("user_validation", {})
+        
+        # If user_context already has authenticated=True (from middleware), trust it
+        # but still validate/update session if token is provided
+        already_authenticated = user_context.get("authenticated", False) or user_context.get("is_authenticated", False)
+        
+        # Validate session if token provided
+        if token:
+            session_result = self.session_manager.validate_session(token, user_context)
+            if not session_result["valid"]:
+                # If already authenticated from middleware, but token validation fails,
+                # this might be a token refresh issue - allow if already authenticated
+                if already_authenticated:
+                    logger.debug(f"Token validation failed but user already authenticated from middleware")
+                    # Keep existing user_context
+                elif config.get("require_auth", True) and not config.get("allow_anonymous", False):
+                    logger.warning(f"Session validation failed: {session_result.get('error')}")
+                    return {
+                        "valid": False,
+                        "error": session_result.get("error", "Authentication failed"),
+                        "user_context": None
+                    }
+            else:
+                # Update user context with validated session info (includes unified session_id)
+                user_context = session_result["user_context"]
+                already_authenticated = True
         
         # Check if authentication is required
         if config.get("require_auth", True):
-            if not user_context.get("is_authenticated", False):
+            if not already_authenticated and not user_context.get("authenticated", False):
                 if not config.get("allow_anonymous", False):
                     logger.warning("Authentication required but user not authenticated")
-                    return False
+                    return {
+                        "valid": False,
+                        "error": "Authentication required",
+                        "user_context": None
+                    }
+        
+        # Ensure authenticated flag is set if validation passed
+        if not user_context.get("authenticated", False) and already_authenticated:
+            user_context["authenticated"] = True
+            user_context["is_authenticated"] = True
         
         # Additional validation logic can be added here
-        return True
+        return {
+            "valid": True,
+            "error": None,
+            "user_context": user_context
+        }
     
     def sanitize_input(self, input_text: str) -> str:
         """Sanitize user input"""

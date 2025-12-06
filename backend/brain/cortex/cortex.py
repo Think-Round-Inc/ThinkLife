@@ -11,22 +11,6 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 from dotenv import load_dotenv
 
-# LangFuse tracing
-try:
-    from langfuse.decorators import observe, langfuse_context
-    LANGFUSE_AVAILABLE = True
-except (ImportError, Exception) as e:
-    LANGFUSE_AVAILABLE = False
-    def observe(name=None, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    class LangfuseContext:
-        def update_current_trace(self, **kwargs):
-            pass
-        def update_current_observation(self, **kwargs):
-            pass
-    langfuse_context = LangfuseContext()
 
 from ..specs import (
     BrainRequest, BrainResponse, IAgent,
@@ -46,6 +30,7 @@ from ..guardrails import SecurityManager
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class CortexFlow:
@@ -132,7 +117,6 @@ class CortexFlow:
         if not self._initialized:
             await self.initialize()
     
-    @observe(name="cortex_process_agent_request")
     async def process_agent_request(
         self,
         agent_specs: AgentExecutionSpec,
@@ -151,16 +135,15 @@ class CortexFlow:
         """
         start_time = time.time()
         
-        # Update observation metadata (not trace - this is a nested observation)
-        langfuse_context.update_current_observation(
-            metadata={
-                "agent_type": agent_specs.agent_type if hasattr(agent_specs, 'agent_type') else "unknown",
-                "provider": agent_specs.provider.provider_type if agent_specs.provider else None,
-                "model": agent_specs.provider.model if agent_specs.provider else None,
-                "tools_count": len(agent_specs.tools) if agent_specs.tools else 0,
-                "data_sources_count": len(agent_specs.data_sources) if agent_specs.data_sources else 0
-            }
-        )
+        return await self._process_agent_request_internal(agent_specs, request, start_time)
+    
+    async def _process_agent_request_internal(
+        self,
+        agent_specs: AgentExecutionSpec,
+        request: BrainRequest,
+        start_time: float
+    ) -> Dict[str, Any]:
+        """Internal processing method for agent request"""
         
         try:
             # Ensure initialization
@@ -219,9 +202,41 @@ class CortexFlow:
                     elif source_name not in ["conversation_history"]:
                         logger.info(f"Data source '{source_name}' - validation skipped (handled by agent)")
             
-            # 4. Apply guardrails (rate limiting)
+            # 4. Apply guardrails (session validation and rate limiting)
+            # Convert UserContext dataclass to dict for validation
+            from dataclasses import asdict
+            user_context_dict = asdict(request.user_context) if hasattr(request.user_context, '__dataclass_fields__') else dict(request.user_context)
+            
+            # Validate user session using guardrails
+            # Token might be in metadata or passed separately
+            token = user_context_dict.get("token") or (request.metadata.dict() if request.metadata and hasattr(request.metadata, 'dict') else {}).get("token")
+            
+            validation_result = self.security_manager.validate_user(
+                user_context_dict,
+                token=token
+            )
+            
+            if not validation_result["valid"]:
+                logger.warning(f"User validation failed: {validation_result.get('error')}")
+                return {
+                    "success": False,
+                    "content": f"Authentication failed: {validation_result.get('error', 'Invalid session')}",
+                    "metadata": {"error": validation_result.get("error")},
+                    "processing_time": time.time() - start_time
+                }
+            
+            # Update user context with validated session info
+            if validation_result.get("user_context"):
+                validated_context = validation_result["user_context"]
+                # Merge validated context back into UserContext dataclass
+                # Update fields that exist in UserContext
+                for key, value in validated_context.items():
+                    if hasattr(request.user_context, key):
+                        setattr(request.user_context, key, value)
+            
+            # Check rate limiting with validated user context
             user_id = request.user_context.user_id
-            if not self.security_manager.check_rate_limit(user_id):
+            if not self.security_manager.check_rate_limit(user_id, asdict(request.user_context)):
                 logger.warning(f"Rate limit exceeded for user: {user_id}")
                 return {
                     "success": False,
@@ -270,7 +285,6 @@ class CortexFlow:
                 "processing_time": time.time() - start_time
             }
 
-    @observe(name="cortex_create_execution_plan")
     async def create_execution_plan(
         self,
         agent_specs: AgentExecutionSpec,
@@ -457,7 +471,6 @@ class CortexFlow:
         
         return round(latency, 2)
     
-    @observe(name="cortex_execute_plan")
     async def execute_plan(
         self,
         plan: ExecutionPlan,
@@ -487,7 +500,6 @@ class CortexFlow:
             logger.error(f"Execution failed: {e}")
             raise
     
-    @observe(name="cortex_execute_agent_request")
     async def execute_agent_request(
         self,
         plan: ExecutionPlan,

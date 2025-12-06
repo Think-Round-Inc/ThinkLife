@@ -6,10 +6,10 @@ const nextConfig = {
     unoptimized: true,
     domains: [],
   },
-  eslint: {
-    // Disable ESLint during builds
-    ignoreDuringBuilds: true,
-  },
+  // Add empty turbopack config to silence the warning
+  // The path alias '@' is already configured in tsconfig.json
+  turbopack: {},
+  // Keep webpack config for compatibility, but it won't be used with Turbopack
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
     // Ensure path aliases work in all environments
     config.resolve.alias = {

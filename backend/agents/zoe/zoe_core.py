@@ -34,7 +34,7 @@ class ZoeCore:
     
     def __init__(self):
         self.personality = ZoePersonality()
-        self.conversation_manager = ZoeConversationManager(None)
+        self.conversation_manager = ZoeConversationManager()
         self.empathy_level = "high"
         self.trauma_awareness = True
         
@@ -47,14 +47,14 @@ class ZoeCore:
         Returns dict with user info, conversation history, safety requirements
         """
         # Get conversation history
-        history = self.conversation_manager.get_session(session_id)
+        history = self.conversation_manager.get_conversation_history(session_id)
         
         context = {
             "user_id": user_context.get("user_id", "anonymous"),
             "session_id": session_id,
             "empathy_level": self.empathy_level,
             "trauma_aware": self.trauma_awareness,
-            "conversation_length": len(history.get("messages", [])) if history else 0
+            "conversation_length": len(history) if history else 0
         }
         
         # Add ACE score if available
@@ -151,8 +151,7 @@ class ZoeCore:
     
     def clear_conversation(self, session_id: str) -> bool:
         """Clear conversation history"""
-        self.conversation_manager.clear_session(session_id)
-        return True
+        return self.conversation_manager.clear_conversation(session_id)
     
     def get_fallback_response(self) -> str:
         """Get fallback response when LLM fails"""
@@ -164,22 +163,23 @@ class ZoeCore:
     
     def health_check(self) -> Dict[str, Any]:
         """Health check for ZoeCore"""
-        session_count = 0
-        if hasattr(self.conversation_manager, 'sessions'):
-            session_count = len(self.conversation_manager.sessions)
+        conversation_count = 0
+        if hasattr(self.conversation_manager, 'conversations'):
+            conversation_count = len(self.conversation_manager.conversations)
         
         return {
             "status": "healthy",
             "personality": "trauma-informed",
             "empathy_level": self.empathy_level,
             "trauma_awareness": self.trauma_awareness,
-            "active_sessions": session_count
+            "active_conversations": conversation_count
         }
     
     def shutdown(self):
         """Shutdown ZoeCore"""
-        if hasattr(self.conversation_manager, 'clear_all'):
-            self.conversation_manager.clear_all()
+        # Clear all conversations if needed
+        if hasattr(self.conversation_manager, 'conversations'):
+            self.conversation_manager.conversations.clear()
         logger.info("ZoeCore shutdown complete")
     
     def create_brain_request(
@@ -200,18 +200,21 @@ class ZoeCore:
             message: User's message
             user_context: User context information (age, ACE score, etc.)
             application: Application type (defaults to chatbot)
-            session_id: Optional session ID for conversation continuity
-            user_id: User identifier for session management
+            session_id: Session ID from brain's unified session management
+            user_id: User identifier
             
         Returns:
             Dictionary that can be used to create a BrainRequest for the plugin
         """
-        # Get or create session
-        session_id, session = self.conversation_manager.get_or_create_session(
-            session_id=session_id,
-            user_id=user_id,
-            user_context=user_context
-        )
+        # Use session_id from user_context if not provided
+        if not session_id and user_context:
+            session_id = user_context.get("session_id")
+        
+        # Get conversation length
+        conversation_length = 0
+        if session_id:
+            history = self.conversation_manager.get_conversation_history(session_id)
+            conversation_length = len(history)
         
         # Check if message needs redirection (safety check)
         redirect_info = None
@@ -238,35 +241,11 @@ class ZoeCore:
             "metadata": {
                 "source": "zoe",
                 "personality_mode": "empathetic_companion",
-                "conversation_length": len(session.messages) if session else 0,
+                "conversation_length": conversation_length,
                 "agent_type": "zoe"
             }
         }
     
     def get_conversation_history(self, session_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get conversation history for a session"""
-        return self.conversation_manager.get_conversation_history(session_id, limit)
-    
-    def get_session_stats(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get statistics for a conversation session"""
-        return self.conversation_manager.get_session_stats(session_id)
-    
-    def get_user_sessions(self, user_id: str) -> List[str]:
-        """Get all session IDs for a user"""
-        return self.conversation_manager.get_user_sessions(user_id)
-    
-    def end_session(self, session_id: str) -> bool:
-        """End a conversation session"""
-        return self.conversation_manager.end_session(session_id)
-    
-    def cleanup_expired_sessions(self) -> int:
-        """Clean up expired conversation sessions"""
-        return self.conversation_manager.cleanup_expired_sessions()
-    
-    def export_conversation(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Export a conversation for external use"""
-        return self.conversation_manager.export_conversation(session_id)
-    
-    def update_user_context(self, session_id: str, context_updates: Dict[str, Any]) -> bool:
-        """Update user context for a session"""
-        return self.conversation_manager.update_user_context(session_id, context_updates) 
+        return self.conversation_manager.get_conversation_history(session_id, limit) 

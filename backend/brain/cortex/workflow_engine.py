@@ -14,36 +14,6 @@ import operator
 
 logger = logging.getLogger(__name__)
 
-# Optional LangFuse imports - gracefully handle compatibility issues
-try:
-    from langfuse.decorators import observe, langfuse_context
-    LANGFUSE_AVAILABLE = True
-except (ImportError, Exception) as e:
-    logger.warning(f"LangFuse not available: {e}. Continuing without observability.")
-    LANGFUSE_AVAILABLE = False
-    
-    # Create no-op decorators and context
-    def observe(name=None, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    class LangfuseContext:
-        def update_current_trace(self, **kwargs):
-            pass
-        def update_current_observation(self, **kwargs):
-            pass
-        def observe_llm_call(self, **kwargs):
-            class NoOpContext:
-                def __enter__(self):
-                    return self
-                def __exit__(self, *args):
-                    pass
-                def update(self, **kwargs):
-                    pass
-            return NoOpContext()
-    
-    langfuse_context = LangfuseContext()
 
 from ..specs import WorkflowStatus
 
@@ -305,7 +275,7 @@ class WorkflowEngine:
         logger.info(f"[{state['execution_id']}] Querying data sources")
         
         try:
-            from ..data_sources import get_data_source_registry
+            from ..data_sources import get_data_source_registry, create_vector_data_source, DataSourceConfig, DataSourceType
             
             registry = get_data_source_registry()
             request = state["request"]
@@ -328,18 +298,79 @@ class WorkflowEngine:
                         
                         # Check if data source is available
                         if registry.check_data_source_available("vector_db"):
-                            # Query data source
-                            # Note: This is simplified - actual implementation would load and query vector_db
                             logger.info(f"Querying vector_db with query: {query[:50]}...")
-                            # Placeholder for actual vector DB query
+                            
+                            try:
+                                # Create vector data source with config from spec
+                                config = DataSourceConfig(
+                                    source_id="vector_db",
+                                    source_type=DataSourceType.VECTOR_DB,
+                                    config={
+                                        "collection_name": data_source_spec.config.get("collection_name", "default_collection") if hasattr(data_source_spec, 'config') and data_source_spec.config else "default_collection",
+                                        "k": limit,
+                                        "embedding_model": data_source_spec.config.get("embedding_model") if hasattr(data_source_spec, 'config') and data_source_spec.config else None,
+                                        "db_path": data_source_spec.config.get("db_path") if hasattr(data_source_spec, 'config') and data_source_spec.config else None,
+                                    }
+                                )
+                                
+                                vector_source = create_vector_data_source(config)
+                                
+                                # Initialize the data source
+                                init_config = {}
+                                if hasattr(data_source_spec, 'config') and data_source_spec.config:
+                                    if data_source_spec.config.get("db_path"):
+                                        init_config["db_path"] = data_source_spec.config.get("db_path")
+                                    if data_source_spec.config.get("vectorstore"):
+                                        init_config["vectorstore"] = data_source_spec.config.get("vectorstore")
+                                
+                                initialized = await vector_source.initialize(init_config)
+                                
+                                if initialized:
+                                    # Query the vector database
+                                    query_results = await vector_source.query(
+                                        query=query,
+                                        context={"filter": data_source_spec.config.get("filter") if hasattr(data_source_spec, 'config') and data_source_spec.config else None},
+                                        k=limit
+                                    )
+                                    
+                                    results.append({
+                                        "source": source_name,
+                                        "query": query,
+                                        "results": query_results,
+                                        "count": len(query_results),
+                                        "message": f"Retrieved {len(query_results)} results from vector database"
+                                    })
+                                    
+                                    logger.info(f"Vector DB query returned {len(query_results)} results")
+                                    
+                                    # Close the data source
+                                    await vector_source.close()
+                                else:
+                                    logger.warning("Vector data source initialization failed")
+                                    results.append({
+                                        "source": source_name,
+                                        "query": query,
+                                        "results": [],
+                                        "message": "Vector DB initialization failed"
+                                    })
+                                    
+                            except Exception as e:
+                                logger.error(f"Error querying vector_db: {e}")
+                                results.append({
+                                    "source": source_name,
+                                    "query": query,
+                                    "results": [],
+                                    "message": f"Vector DB query error: {str(e)}"
+                                })
+                                state["errors"].append(f"Vector DB query error: {str(e)}")
+                        else:
+                            logger.warning(f"Data source {source_name} not available")
                             results.append({
                                 "source": source_name,
                                 "query": query,
                                 "results": [],
-                                "message": "Vector DB query placeholder - implement actual query logic"
+                                "message": f"Data source {source_name} not available"
                             })
-                        else:
-                            logger.warning(f"Data source {source_name} not available")
                     
                 except Exception as e:
                     logger.error(f"Error querying data source: {e}")
@@ -413,6 +444,10 @@ class WorkflowEngine:
             specs = state["specs"]
             messages = []
             
+            # Extract user context from Keycloak session for personalization
+            user_context = request.user_context
+            user_info = self._extract_user_info_for_llm(user_context)
+            
             # Check if agent provided pre-built messages context (e.g., from ZoeCore)
             agent_metadata = specs.agent_metadata if hasattr(specs, 'agent_metadata') else {}
             messages_context = agent_metadata.get("messages_context", {})
@@ -421,13 +456,21 @@ class WorkflowEngine:
                 # Agent provided system prompt and conversation history
                 logger.info("Using agent-provided messages context")
                 
-                # Add system prompt
+                # Add system prompt (may already include user context from agent)
                 system_prompt = messages_context.get("system_prompt")
                 if system_prompt:
-                    messages.append({
-                        "role": "system",
-                        "content": system_prompt
-                    })
+                    # Enhance system prompt with Keycloak session info if not already included
+                    if user_info and not self._has_user_context_in_prompt(system_prompt):
+                        enhanced_prompt = self._enhance_prompt_with_user_info(system_prompt, user_info)
+                        messages.append({
+                            "role": "system",
+                            "content": enhanced_prompt
+                        })
+                    else:
+                        messages.append({
+                            "role": "system",
+                            "content": system_prompt
+                        })
                 
                 # Add conversation history
                 conversation_history = messages_context.get("conversation_history", [])
@@ -471,6 +514,15 @@ class WorkflowEngine:
                 # No agent-provided context, build generic messages
                 logger.info("Building generic messages (no agent context provided)")
                 
+                # Build system prompt with user context from Keycloak session
+                system_parts = []
+                
+                # Add user context for personalization
+                if user_info:
+                    user_context_prompt = self._build_user_context_prompt(user_info)
+                    if user_context_prompt:
+                        system_parts.append(user_context_prompt)
+                
                 # Add context from data sources
                 if state["data_source_results"]:
                     context_info = "\n".join([
@@ -478,10 +530,7 @@ class WorkflowEngine:
                         for r in state["data_source_results"]
                     ])
                     if context_info:
-                        messages.append({
-                            "role": "system",
-                            "content": f"Context from data sources:\n{context_info}"
-                        })
+                        system_parts.append(f"Context from data sources:\n{context_info}")
                 
                 # Add context from tools
                 if state["tool_results"]:
@@ -490,10 +539,14 @@ class WorkflowEngine:
                         for r in state["tool_results"]
                     ])
                     if tool_info:
-                        messages.append({
-                            "role": "system",
-                            "content": f"Tool execution results:\n{tool_info}"
-                        })
+                        system_parts.append(f"Tool execution results:\n{tool_info}")
+                
+                # Add system prompt if we have any context
+                if system_parts:
+                    messages.append({
+                        "role": "system",
+                        "content": "\n\n".join(system_parts)
+                    })
                 
                 # Add user message
                 messages.append({
@@ -502,30 +555,40 @@ class WorkflowEngine:
                 })
             
             state["messages"] = messages
+            
+            # Ensure at least one message exists (fallback)
+            if not messages:
+                logger.warning(f"[{state['execution_id']}] No messages built, adding fallback user message")
+                messages.append({
+                    "role": "user",
+                    "content": request.message or "Hello"
+                })
+                state["messages"] = messages
+            
             logger.info(f"Built {len(messages)} messages for LLM")
             
         except Exception as e:
             logger.error(f"Build messages node error: {e}")
             state["errors"].append(f"Build messages error: {str(e)}")
+            
+            # Fallback: ensure at least user message exists
+            if not state.get("messages"):
+                request = state.get("request")
+                if request:
+                    state["messages"] = [{
+                        "role": "user",
+                        "content": request.message or "Hello"
+                    }]
+                    logger.warning(f"[{state['execution_id']}] Using fallback message after error")
         
         return state
     
-    @observe(name="workflow_call_provider")
     async def _call_provider_node(self, state: WorkflowState) -> WorkflowState:
         """Call LLM provider with built messages - tracked in LangFuse"""
         state["execution_steps"].append("call_provider")
         logger.info(f"[{state['execution_id']}] Calling LLM provider")
         
-        # Track workflow execution in LangFuse
-        langfuse_context.update_current_trace(
-            name="workflow_execution",
-            metadata={
-                "execution_id": state["execution_id"],
-                "workflow_step": "call_provider",
-                "session_id": state.get("context", {}).get("session_id")
-            }
-        )
-        
+        # Update observation metadata (not trace - this is a nested observation)        
         try:
             from ..providers import create_provider
             
@@ -563,38 +626,15 @@ class WorkflowEngine:
             # Extract content from response
             if response.get("success"):
                 state["final_content"] = response.get("content", "")
-                
-                # Track successful response in LangFuse
-                langfuse_context.update_current_observation(
-                    metadata={
-                        "provider": provider_type,
-                        "response_length": len(state["final_content"]),
-                        "success": True
-                    }
-                )
             else:
                 error_msg = response.get("error", "Provider returned unsuccessful response")
                 state["errors"].append(error_msg)
                 state["final_content"] = f"Error: {error_msg}"
-                
-                # Track error in LangFuse
-                langfuse_context.update_current_observation(
-                    level="ERROR",
-                    status_message=error_msg,
-                    metadata={"provider": provider_type, "success": False}
-                )
             
         except Exception as e:
             logger.error(f"Provider call node error: {e}")
             state["errors"].append(f"Provider error: {str(e)}")
             state["final_content"] = f"Error calling provider: {str(e)}"
-            
-            # Track exception in LangFuse
-            langfuse_context.update_current_observation(
-                level="ERROR",
-                status_message=str(e),
-                metadata={"error": str(e)}
-            )
         
         return state
     
@@ -644,7 +684,105 @@ class WorkflowEngine:
         # Otherwise go to messages
         return "messages"
     
-    # UTILITY METHODS
+    # UTILITY METHODS FOR USER CONTEXT
+    
+    def _extract_user_info_for_llm(self, user_context) -> Optional[Dict[str, Any]]:
+        """Extract user information from Keycloak session for LLM personalization"""
+        if not user_context:
+            return None
+        
+        # Convert dataclass to dict if needed
+        from dataclasses import asdict
+        if hasattr(user_context, '__dataclass_fields__'):
+            context_dict = asdict(user_context)
+        else:
+            context_dict = dict(user_context) if isinstance(user_context, dict) else {}
+        
+        # Only include info if user is authenticated via Keycloak
+        if not context_dict.get("is_authenticated") and not context_dict.get("authenticated"):
+            return None
+        
+        user_info = {
+            "user_id": context_dict.get("user_id"),
+            "session_id": context_dict.get("session_id"),
+        }
+        
+        # Add relevant info for LLM personalization
+        if context_dict.get("name"):
+            user_info["name"] = context_dict.get("name")
+        if context_dict.get("email"):
+            user_info["email"] = context_dict.get("email")
+        if context_dict.get("roles"):
+            user_info["roles"] = context_dict.get("roles", [])
+        
+        # Add user profile info if available
+        user_profile = context_dict.get("user_profile")
+        if user_profile:
+            if isinstance(user_profile, dict):
+                if user_profile.get("ace_score") is not None:
+                    user_info["ace_score"] = user_profile.get("ace_score")
+            elif hasattr(user_profile, 'ace_score'):
+                user_info["ace_score"] = user_profile.ace_score
+        
+        return user_info if len(user_info) > 2 else None
+    
+    def _has_user_context_in_prompt(self, prompt: str) -> bool:
+        """Check if user context is already included in the prompt"""
+        if not prompt:
+            return False
+        
+        # Check for common user context indicators
+        indicators = [
+            "user_id",
+            "session_id",
+            "user context",
+            "user information",
+            "authenticated user",
+            "user profile"
+        ]
+        
+        prompt_lower = prompt.lower()
+        return any(indicator in prompt_lower for indicator in indicators)
+    
+    def _enhance_prompt_with_user_info(self, prompt: str, user_info: Dict[str, Any]) -> str:
+        """Enhance a system prompt with user information"""
+        if not user_info or not prompt:
+            return prompt
+        
+        user_context_section = self._build_user_context_prompt(user_info)
+        if not user_context_section:
+            return prompt
+        
+        # Add user context at the beginning of the prompt
+        return f"{user_context_section}\n\n{prompt}"
+    
+    def _build_user_context_prompt(self, user_info: Dict[str, Any]) -> str:
+        """Build user context section for LLM prompts"""
+        if not user_info:
+            return ""
+        
+        parts = []
+        
+        if user_info.get("name"):
+            parts.append(f"User name: {user_info.get('name')}")
+        
+        if user_info.get("email"):
+            parts.append(f"User email: {user_info.get('email')}")
+        
+        if user_info.get("roles"):
+            roles = ", ".join(user_info.get("roles", []))
+            if roles:
+                parts.append(f"User roles: {roles}")
+        
+        if user_info.get("ace_score") is not None:
+            ace_score = user_info.get("ace_score")
+            parts.append(f"User ACE score: {ace_score} (trauma-informed context)")
+        
+        if parts:
+            return "User Context (for personalization):\n" + "\n".join(f"- {part}" for part in parts)
+        
+        return ""
+    
     def get_execution(self, execution_id: str) -> Optional[Dict[str, Any]]:
         """Get workflow execution by ID"""
         return self.executions.get(execution_id)

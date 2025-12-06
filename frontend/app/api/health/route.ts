@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "../../../lib/prisma"
 
-// GET /api/health - Health check for database connectivity
+// GET /api/health - Health check
 export async function GET(request: NextRequest) {
   try {
-    // Test database connectivity
-    await prisma.$queryRaw`SELECT 1`
-    
-    // Get basic stats
-    const userCount = await prisma.user.count()
-    
     return NextResponse.json({
       status: "healthy",
-      database: "connected",
-      userCount,
+      service: "ThinkLife Frontend",
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
@@ -21,9 +13,8 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json({
       status: "unhealthy",
-      database: "disconnected",
       error: error instanceof Error ? error.message : "Unknown error",
       timestamp: new Date().toISOString(),
     }, { status: 503 })
   }
-} 
+}

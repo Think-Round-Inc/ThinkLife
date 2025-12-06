@@ -161,13 +161,8 @@ class VectorDataSource(IDataSource):
         try:
             from langchain_openai import OpenAIEmbeddings
             
-            # Check for embeddings in data folder
-            data_sources_dir = Path(__file__).parent
-            embeddings_dir = data_sources_dir / "data" / "embeddings"
-            
             # For now, use OpenAI embeddings (can be extended to load from file)
             # Check if OPENAI_API_KEY is available
-            import os
             if os.getenv("OPENAI_API_KEY"):
                 model = self.config.config.get("embedding_model", "text-embedding-ada-002")
                 return OpenAIEmbeddings(model=model)
@@ -186,9 +181,13 @@ class VectorDataSource(IDataSource):
         if not self._initialized:
             raise RuntimeError("Data source not initialized")
         
+        if not self.vectorstore:
+            logger.error("Vectorstore not initialized")
+            return []
+        
         try:
             k = kwargs.get("k", self.config.config.get("k", 5))
-            filter_criteria = kwargs.get("filter") or context.get("filter") if context else None
+            filter_criteria = kwargs.get("filter") or (context.get("filter") if context else None)
             
             docs = self.vectorstore.similarity_search(query, k=k, filter=filter_criteria)
             
