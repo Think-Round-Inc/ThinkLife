@@ -45,9 +45,9 @@ Include:
 
 | Action                      | Timeline         |
 |-----------------------------|------------------|
-| Acknowledge receipt        | Within 1 business day  |
-| Initial triage & classification | Within 3 business days |
-| Fix or mitigation released | Within 14 days (where feasible) |
+| Acknowledge receipt        | ASAP  |
+| Initial triage & classification | ASAP |
+| Fix or mitigation released | ASAP |
 | Public disclosure          | After patch release (unless you request otherwise) |
 
 We will keep you updated at each stage.  Thank you for helping us keep ThinkLife secure!
@@ -57,7 +57,6 @@ We will keep you updated at each stage.  Thank you for helping us keep ThinkLife
 ## Maintainers & Contacts
 
 - **Heidi Hardin** (Founder, Think Round, Inc)
-- **Jagadesh Varma Nadimpalli** (Founding AI Engineer Intern)
 - **Generative AI Engineers**
 
 

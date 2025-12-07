@@ -26,10 +26,6 @@ Examples of unacceptable behavior by participants include:
 
 Project maintainers are responsible for clarifying and enforcing our standards of acceptable behavior and will take appropriate and fair corrective action in response to any behavior that they deem inappropriate, threatening, offensive, or harmful.
 
-Maintainers include:
-
-- **Jagadesh Varma Nadimpalli** (Founding AI Engineer Intern)
-- **Heidi Hardin** (Founder, Think Round, Inc)
 
 ## Reporting Guidelines
 
