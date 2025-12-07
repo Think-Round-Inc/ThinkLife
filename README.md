@@ -1,10 +1,12 @@
 # ThinkLife
 
-![Commits](https://img.shields.io/github/commit-activity/m/Think-Round-Inc/ThinkLife)
+![Overall Commits](https://img.shields.io/github/commit-activity/y/Think-Round-Inc/ThinkLife)
 ![Collaborators](https://img.shields.io/github/contributors/Think-Round-Inc/ThinkLife)
-![Languages](https://img.shields.io/github/languages/top/Think-Round-Inc/ThinkLife)
+![Top Language](https://img.shields.io/github/languages/top/Think-Round-Inc/ThinkLife)
+![Python](https://img.shields.io/badge/python-3.9+-blue?logo=python&logoColor=white)
+![Pre-releases](https://img.shields.io/github/v/release/Think-Round-Inc/ThinkLife?include_prereleases&label=pre-releases&sort=semver)
 ![License](https://img.shields.io/github/license/Think-Round-Inc/ThinkLife)
-![Version](https://img.shields.io/badge/version-0.7.0-blue)
+![Version](https://img.shields.io/github/package-json/v/Think-Round-Inc/ThinkLife?filename=frontend%2Fpackage.json)
 
 **A comprehensive platform showcasing Think Round's AI integration across healing rooms, exterior spaces and related projects.**
 
