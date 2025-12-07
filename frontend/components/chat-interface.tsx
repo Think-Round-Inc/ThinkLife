@@ -14,7 +14,7 @@ import {
   MessageSquare
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { getUserInfo } from "@/lib/keycloak-client";
+import { getUserInfo } from "../lib/keycloak-client";
 
 // Import sub-components
 import AgeRestriction from "./age-restriction";
