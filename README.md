@@ -1,12 +1,18 @@
 # ThinkLife
 
+![Commits](https://img.shields.io/github/commit-activity/m/Think-Round-Inc/ThinkLife)
+![Collaborators](https://img.shields.io/github/contributors/Think-Round-Inc/ThinkLife)
+![Languages](https://img.shields.io/github/languages/top/Think-Round-Inc/ThinkLife)
+![License](https://img.shields.io/github/license/Think-Round-Inc/ThinkLife)
+![Version](https://img.shields.io/badge/version-0.7.0-blue)
+
 **A comprehensive platform showcasing Think Round's AI integration across healing rooms, exterior spaces and related projects.**
 
 ---
 
 ## **Platform Overview**
 
-ThinkxLife serves as a **transparent demonstration** of how Think Round integrates artificial intelligence to enhance our mission of healing and transformation. The platform consists of three main experience areas:
+ThinkLife serves as a **transparent demonstration** of how Think Round integrates artificial intelligence to enhance our mission of healing and transformation. The platform consists of three main experience areas:
 
 ### **Inside Our AI**
 Explore how we thoughtfully integrate AI technology across our programs, featuring trauma-informed design principles, ethical AI implementation, and transparent technology practices.
@@ -75,7 +81,7 @@ Zoe's responses are generated through a sophisticated multi-layered system:
 
 ## **AI Integration Possibilities**
 
-ThinkxLife demonstrates the potential for thoughtful AI integration across therapeutic and creative contexts. Through this platform, we explore how artificial intelligence might support arts therapy, enhance healing room experiences, strengthen community connections, and make educational content more accessible and personalized. Our approach prioritizes human agency while investigating how technology can amplify the healing arts and foster deeper connections within supportive communities.
+ThinkLife demonstrates the potential for thoughtful AI integration across therapeutic and creative contexts. Through this platform, we explore how artificial intelligence might support arts therapy, enhance healing room experiences, strengthen community connections, and make educational content more accessible and personalized. Our approach prioritizes human agency while investigating how technology can amplify the healing arts and foster deeper connections within supportive communities.
 
 ---
 
@@ -121,7 +127,7 @@ We openly share our learnings, challenges, and improvements in integrating AI re
 
 ## **Contributing to Responsible AI**
 
-ThinkxLife is more than a demonstration — it's a **living example** of how nonprofits can leverage AI ethically and effectively. We welcome:
+ThinkLife is more than a demonstration — it's a **living example** of how nonprofits can leverage AI ethically and effectively. We welcome:
 
 - **Feedback** on our AI implementation approaches
 - **Contributions** to improve accessibility and inclusivity

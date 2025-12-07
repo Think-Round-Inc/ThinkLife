@@ -1,6 +1,6 @@
 # Security Policy
 
-ThinkxLife is committed to the security and privacy of its users.  This document describes our process for reporting and handling vulnerabilities in the ThinkxLife codebase.
+ThinkLife is committed to the security and privacy of its users.  This document describes our process for reporting and handling vulnerabilities in the ThinkLife codebase.
 
 ---
 
@@ -30,7 +30,7 @@ GitHub will keep your report private until a fix is ready for public disclosure.
 Send an encrypted or plain-text email to: info@thinkround.org
 
 
-Subject line: `Security vulnerability in ThinkxLife`
+Subject line: `Security vulnerability in ThinkLife`
 
 Include:
 - **Summary** of the issue
@@ -45,19 +45,18 @@ Include:
 
 | Action                      | Timeline         |
 |-----------------------------|------------------|
-| Acknowledge receipt        | Within 1 business day  |
-| Initial triage & classification | Within 3 business days |
-| Fix or mitigation released | Within 14 days (where feasible) |
+| Acknowledge receipt        | ASAP  |
+| Initial triage & classification | ASAP |
+| Fix or mitigation released | ASAP |
 | Public disclosure          | After patch release (unless you request otherwise) |
 
-We will keep you updated at each stage.  Thank you for helping us keep ThinkxLife secure!
+We will keep you updated at each stage.  Thank you for helping us keep ThinkLife secure!
 
 ---
 
 ## Maintainers & Contacts
 
 - **Heidi Hardin** (Founder, Think Round, Inc)
-- **Jagadesh Varma Nadimpalli** (Founding AI Engineer Intern)
 - **Generative AI Engineers**
 
 
