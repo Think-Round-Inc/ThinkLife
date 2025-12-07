@@ -68,7 +68,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/  <-- Commented out because it ignores frontend/lib
 lib64/
 parts/
 sdist/
