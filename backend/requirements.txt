@@ -11,9 +11,12 @@ chromadb
 python-multipart
 anthropic
 httpx
-langfuse>=2.0.0,<3.0.0 
+langfuse>=3.7.0
 google-generativeai
 tavily-python
 PyJWT
 cryptography
 requests
+# Fixes for Python 3.9 and LibreSSL environments
+urllib3<2.0.0
+importlib-metadata>=6.0.0

@@ -7,7 +7,7 @@ import os
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-from ..specs import IDataSource, DataSourceType, DataSourceSpec
+from ..specs import IDataSource, DataSourceType
 from .base_data_source import DataSourceConfig
 from .data_source_registry import get_data_source_registry
 
@@ -19,7 +19,6 @@ try:
     from langchain_chroma import Chroma
     CHROMA_AVAILABLE = True
 except ImportError:
-    logger.warning("ChromaDB libraries not available. Install with: pip install chromadb langchain-chroma")
     CHROMA_AVAILABLE = False
     chromadb = None
     Chroma = None
@@ -35,30 +34,28 @@ class VectorDataSource(IDataSource):
         self._is_external = False
     
     async def initialize(self, init_config: Dict[str, Any] = None) -> bool:
-        """Validate config and initialize vector database"""
         if not CHROMA_AVAILABLE:
             logger.error("ChromaDB library not available")
             return False
         
-        # Validate with registry
         if not self._validate_config():
             return False
         
-        # Initialize vectorstore
         try:
-            # Check if external db_path is provided
+            init_config = init_config or {}
             db_path = self.config.config.get("db_path") or init_config.get("db_path")
-            vectorstore = init_config.get("vectorstore")
             
-            if vectorstore:
-                # Use provided vectorstore
-                self.vectorstore = vectorstore
+            if not db_path:
+                db_path = self._find_sqlite_db()
+                if db_path:
+                    logger.info(f"Discovered vector DB at {db_path}")
+            
+            if init_config.get("vectorstore"):
+                self.vectorstore = init_config.get("vectorstore")
             elif db_path:
-                # Create from external path
                 self.vectorstore = await self._create_from_path(db_path)
                 self._is_external = True
             else:
-                # Create default vectorstore with embeddings from data folder
                 self.vectorstore = await self._create_default()
             
             if not self.vectorstore:
@@ -67,168 +64,120 @@ class VectorDataSource(IDataSource):
             self._initialized = True
             logger.info(f"Vector data source {self.config.source_id} initialized")
             return True
-        except Exception as e:
-            logger.error(f"Vector data source initialization failed: {e}")
+            
+        except Exception:
+            logger.exception("Vector data source initialization failed")
             return False
     
     def _validate_config(self) -> bool:
-        """Validate configuration using data source registry"""
         registry = get_data_source_registry()
-        is_valid = registry.check_data_source_available("vector_db")
-        if not is_valid:
-            logger.error("Validation failed: vector_db data source not available")
+        if not registry.check_data_source_available("vector_db"):
+            logger.error("vector_db data source not available")
             return False
         return True
     
     async def _create_default(self):
-        """Create default vectorstore with embeddings from data folder"""
+        return await self._create_client(None)
+    
+    async def _create_from_path(self, db_path: str):
+        return await self._create_client(db_path)
+
+    async def _create_client(self, db_path: Optional[str]):
+        """Unified client creation logic"""
         try:
-            # Get embeddings from data folder
             embeddings = self._load_embeddings()
             if not embeddings:
-                logger.warning("No embeddings found, creating empty vectorstore")
+                logger.warning("No embeddings found, functionality limited")
             
-            # Get data source directory
-            data_sources_dir = Path(__file__).parent
-            persist_dir = data_sources_dir / "data" / "chroma_db"
-            persist_dir.mkdir(parents=True, exist_ok=True)
+            if db_path:
+                persist_dir = os.path.abspath(os.path.dirname(db_path) if db_path.endswith('.sqlite3') else db_path)
+            else:
+                persist_dir = Path(__file__).parent / "data" / "chroma_db"
+                persist_dir.mkdir(parents=True, exist_ok=True)
+                persist_dir = str(persist_dir)
             
-            # Create ChromaDB client
-            chroma_client = chromadb.PersistentClient(
+            if not os.path.exists(persist_dir) and db_path:
+                try:
+                    os.makedirs(persist_dir, exist_ok=True)
+                except Exception:
+                    logger.exception(f"Failed to create directory {persist_dir}")
+                return None
+            
+            client = chromadb.PersistentClient(
                 path=str(persist_dir),
                 settings=Settings(anonymized_telemetry=False)
             )
             
-            collection_name = self.config.config.get("collection_name", "default_collection")
+            coll_name = self.config.config.get("collection_name", "default_collection")
+            if db_path:
+                try:
+                    colls = client.list_collections()
+                    if colls: coll_name = colls[0].name
+                except Exception:
+                    pass
             
-            # Create Chroma vectorstore
-            vectorstore = Chroma(
-                client=chroma_client,
-                collection_name=collection_name,
+            return Chroma(
+                client=client,
+                collection_name=coll_name,
                 embedding_function=embeddings
             )
-            
-            return vectorstore
-        except Exception as e:
-            logger.error(f"Failed to create default vectorstore: {e}")
-            return None
-    
-    async def _create_from_path(self, db_path: str):
-        """Create vectorstore from external path"""
-        try:
-            # Determine persist directory
-            if db_path.endswith('chroma.sqlite3'):
-                persist_dir = os.path.dirname(db_path)
-            else:
-                persist_dir = db_path
-            
-            if not os.path.exists(persist_dir):
-                logger.error(f"Database path does not exist: {persist_dir}")
-                return None
-            
-            # Load embeddings
-            embeddings = self._load_embeddings()
-            if not embeddings:
-                logger.warning("No embeddings found, using default")
-            
-            # Create ChromaDB client
-            chroma_client = chromadb.PersistentClient(
-                path=persist_dir,
-                settings=Settings(anonymized_telemetry=False)
-            )
-            
-            # Get collection name
-            try:
-                collections = chroma_client.list_collections()
-                collection_name = collections[0].name if collections else "default_collection"
-            except:
-                collection_name = self.config.config.get("collection_name", "default_collection")
-            
-            # Create Chroma vectorstore
-            vectorstore = Chroma(
-                client=chroma_client,
-                collection_name=collection_name,
-                embedding_function=embeddings
-            )
-            
-            return vectorstore
-        except Exception as e:
-            logger.error(f"Failed to create vectorstore from path {db_path}: {e}")
+        except Exception:
+            logger.exception(f"Failed to create vectorstore (path={db_path})")
             return None
     
     def _load_embeddings(self):
-        """Load embeddings from data folder"""
         try:
             from langchain_openai import OpenAIEmbeddings
-            
-            # For now, use OpenAI embeddings (can be extended to load from file)
-            # Check if OPENAI_API_KEY is available
             if os.getenv("OPENAI_API_KEY"):
-                model = self.config.config.get("embedding_model", "text-embedding-ada-002")
+                model = self.config.config.get("embedding_model") or "text-embedding-3-small"
                 return OpenAIEmbeddings(model=model)
-            else:
-                logger.warning("OPENAI_API_KEY not found, embeddings may not work")
-                return None
-        except ImportError:
-            logger.warning("OpenAI embeddings not available")
+            logger.warning("OPENAI_API_KEY missing")
             return None
-        except Exception as e:
-            logger.error(f"Failed to load embeddings: {e}")
+        except ImportError:
+            logger.warning("OpenAI embeddings library missing")
+            return None
+        except Exception:
+            logger.exception("Failed to load embeddings")
             return None
     
     async def query(self, query: str, context: Dict[str, Any] = None, **kwargs) -> List[Dict[str, Any]]:
-        """Query vector database"""
-        if not self._initialized:
-            raise RuntimeError("Data source not initialized")
-        
-        if not self.vectorstore:
+        if not self._initialized or not self.vectorstore:
             logger.error("Vectorstore not initialized")
             return []
         
         try:
             k = kwargs.get("k", self.config.config.get("k", 5))
-            filter_criteria = kwargs.get("filter") or (context.get("filter") if context else None)
+            filter_crit = kwargs.get("filter") or (context.get("filter") if context else None)
             
-            docs = self.vectorstore.similarity_search(query, k=k, filter=filter_criteria)
+            docs = self.vectorstore.similarity_search(query, k=k, filter=filter_crit)
             
-            return [
-                {
+            return [{
                     "content": doc.page_content,
                     "metadata": doc.metadata,
                     "source": "vector_db",
                     "score": getattr(doc, 'score', None)
-                }
-                for doc in docs
-            ]
-        except Exception as e:
-            logger.error(f"Vector query failed: {e}")
+            } for doc in docs]
+            
+        except Exception:
+            logger.exception("Vector query failed")
             return []
     
     async def health_check(self) -> Dict[str, Any]:
-        """Check vector database health"""
         try:
             if not self._initialized:
                 return {"status": "not_initialized", "initialized": False}
             
-            if self.vectorstore and hasattr(self.vectorstore, '_collection'):
-                count = self.vectorstore._collection.count()
-                return {
-                    "status": "healthy",
-                    "document_count": count,
-                    "initialized": True,
-                    "is_external": self._is_external
-                }
-            else:
-                return {
-                    "status": "healthy",
-                    "initialized": True,
-                    "is_external": self._is_external
-                }
+            count = self.vectorstore._collection.count() if self.vectorstore and hasattr(self.vectorstore, '_collection') else 0
+            return {
+                "status": "healthy",
+                "document_count": count,
+                "initialized": True,
+                "is_external": self._is_external
+            }
         except Exception as e:
             return {"status": "unhealthy", "error": str(e), "initialized": self._initialized}
     
     async def close(self) -> None:
-        """Close vector database connection"""
         self._initialized = False
         self.vectorstore = None
         logger.info("Vector data source closed")
@@ -237,9 +186,20 @@ class VectorDataSource(IDataSource):
     def source_type(self) -> DataSourceType:
         return DataSourceType.VECTOR_DB
 
+    def _find_sqlite_db(self) -> Optional[str]:
+        try:
+            data_dir = Path(__file__).parent / "data"
+            if not data_dir.exists(): return None
+            candidates = sorted(data_dir.rglob("*.sqlite*"))
+            for path in candidates:
+                if path.is_file(): return str(path.resolve())
+            return None
+        except Exception:
+            logger.warning("Auto-discovery failed", exc_info=True)
+            return None
+
 
 def create_vector_data_source(config: Optional[DataSourceConfig] = None) -> VectorDataSource:
-    """Create vector data source instance"""
     if config is None:
         config = DataSourceConfig(
             source_id="vector_db",

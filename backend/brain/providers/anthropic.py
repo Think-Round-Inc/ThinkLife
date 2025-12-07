@@ -69,7 +69,7 @@ class AnthropicProvider:
         self, 
         messages: List[Dict[str, str]], 
         **kwargs: Any) -> Dict[str, Any]:
-        """Generate response from Anthropic with LangFuse tracing"""
+        """Generate response from Anthropic"""
         if not self._initialized:
             raise RuntimeError("Provider not initialized")
         

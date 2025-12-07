@@ -2,22 +2,15 @@
 Cortex - Generalized AI orchestration system
 """
 
-import asyncio
 import logging
-import os
 import time
-import uuid
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union
 from dotenv import load_dotenv
 
-
 from ..specs import (
-    BrainRequest, BrainResponse, IAgent,
-    BrainConfig, BrainAnalytics, PluginInfo, WorkflowExecution, 
-    DataSourceInfo, ApplicationType, PluginStatus, WorkflowType,
-    AgentExecutionSpec, DataSourceSpec, ProviderSpec, ToolSpec, ProcessingSpec,
-    DataSourceType, ExecutionPlan, WorkflowExecution, WorkflowStep
+    BrainRequest, BrainConfig, BrainAnalytics, WorkflowExecution, 
+    AgentExecutionSpec, ExecutionPlan, IAgent
 )
 from .workflow_engine import WorkflowEngine, get_workflow_engine
 from .reasoning_engine import ReasoningEngine, get_reasoning_engine
@@ -25,12 +18,24 @@ from ..data_sources import get_data_source_registry
 from ..tools import get_tool_registry
 from ..providers import get_provider_registry
 from ..guardrails import SecurityManager
+from evaluation import (
+    get_evaluation_manager, CostEstimator, LatencyEstimator,
+    initialize_langfuse_client, is_langfuse_enabled, LANGFUSE_AVAILABLE
+)
 
-# Load environment variables
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
+# Conditional Langfuse import for tracing
+try:
+    from langfuse import observe
+except ImportError:
+    # No-op decorator if Langfuse not available
+    def observe(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 
 class CortexFlow:
@@ -82,7 +87,7 @@ class CortexFlow:
         self.start_time = datetime.now()
         self.active_executions: Dict[str, WorkflowExecution] = {}
         
-        logger.info("Cortex initialized")
+        logger.info("Cortex instance created")
 
     
     async def initialize(self) -> None:
@@ -108,15 +113,15 @@ class CortexFlow:
             logger.info("Cortex initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Cortex: {str(e)}")
+            logger.critical(f"Failed to initialize Cortex: {e}", exc_info=True)
             raise
     
     
     async def _ensure_initialized(self):
-        """Ensure the Cortex is initialized before processing requests"""
         if not self._initialized:
             await self.initialize()
     
+    @observe(name="cortex_process_agent_request")
     async def process_agent_request(
         self,
         agent_specs: AgentExecutionSpec,
@@ -135,180 +140,98 @@ class CortexFlow:
         """
         start_time = time.time()
         
-        return await self._process_agent_request_internal(agent_specs, request, start_time)
-    
-    async def _process_agent_request_internal(
-        self,
-        agent_specs: AgentExecutionSpec,
-        request: BrainRequest,
-        start_time: float
-    ) -> Dict[str, Any]:
-        """Internal processing method for agent request"""
+        # Initialize Langfuse if needed
+        if agent_specs.processing and agent_specs.processing.eval:
+            if LANGFUSE_AVAILABLE:
+                if not is_langfuse_enabled():
+                    if initialize_langfuse_client():
+                        logger.info("Langfuse tracing enabled")
+                    else:
+                        logger.warning("Langfuse initialization failed")
+            else:
+                logger.warning("Evaluation enabled but Langfuse not installed")
         
         try:
-            # Ensure initialization
             await self._ensure_initialized()
             
-            logger.info("Processing agent request - checking availability")
-            
-            # 1. Check provider availability
+            # 1. Validation
             if agent_specs.provider:
-                provider_type = agent_specs.provider.provider_type
-                model = agent_specs.provider.model
-                is_valid, errors, info = self.provider_registry.check_provider_and_model(
-                    provider_type, model
+                is_valid, errors, _ = self.provider_registry.check_provider_and_model(
+                    agent_specs.provider.provider_type, 
+                    agent_specs.provider.model
                 )
                 if not is_valid:
-                    logger.error(f"Provider validation failed: {errors}")
-                    return {
-                        "success": False,
-                        "content": f"Provider validation failed: {', '.join(errors)}",
-                        "metadata": {"errors": errors},
-                        "processing_time": time.time() - start_time
-                    }
-                logger.info(f"Provider validated: {provider_type} - {info.get('model')}")
+                    return self._create_error_response(f"Provider validation failed: {', '.join(errors)}", start_time)
             
-            # 2. Check tools availability
-            for tool_spec in agent_specs.tools:
-                if tool_spec.enabled:
-                    tool_name = tool_spec.name
-                    if not self.tool_registry.check_tool_available(tool_name):
-                        logger.warning(f"Tool '{tool_name}' not available")
-                        return {
-                            "success": False,
-                            "content": f"Tool '{tool_name}' is not available",
-                            "metadata": {"error": f"Tool '{tool_name}' not found"},
-                            "processing_time": time.time() - start_time
-                        }
-                    logger.info(f"Tool validated: {tool_name}")
+            for tool in agent_specs.tools:
+                if tool.enabled and not self.tool_registry.check_tool_available(tool.name):
+                    return self._create_error_response(f"Tool '{tool.name}' not available", start_time)
             
-            # 3. Check data sources availability
-            for data_source_spec in agent_specs.data_sources:
-                if data_source_spec.enabled:
-                    # Get source name from enum value
-                    source_name = data_source_spec.source_type.value if hasattr(data_source_spec.source_type, 'value') else str(data_source_spec.source_type)
-                    # Check if data source is available (currently only vector_db is supported)
-                    if source_name == "vector_db":
-                        if not self.data_source_registry.check_data_source_available("vector_db"):
-                            logger.warning(f"Data source 'vector_db' not available")
-                            return {
-                                "success": False,
-                                "content": f"Data source 'vector_db' is not available",
-                                "metadata": {"error": "Data source 'vector_db' not found"},
-                                "processing_time": time.time() - start_time
-                            }
-                        logger.info(f"Data source validated: {source_name}")
-                    # Other data source types (conversation_history, etc.) are handled by agents
-                    elif source_name not in ["conversation_history"]:
-                        logger.info(f"Data source '{source_name}' - validation skipped (handled by agent)")
+            for ds in agent_specs.data_sources:
+                if ds.enabled and str(ds.source_type) == "vector_db":
+                    if not self.data_source_registry.check_data_source_available("vector_db"):
+                        return self._create_error_response("Data source 'vector_db' not available", start_time)
             
-            # 4. Apply guardrails (session validation and rate limiting)
-            # Convert UserContext dataclass to dict for validation
+            # 2. Guardrails
+            # Convert context safely
             from dataclasses import asdict
-            user_context_dict = asdict(request.user_context) if hasattr(request.user_context, '__dataclass_fields__') else dict(request.user_context)
+            ctx_dict = asdict(request.user_context) if hasattr(request.user_context, '__dataclass_fields__') else dict(request.user_context)
+            token = ctx_dict.get("token") or (request.metadata.dict().get("token") if request.metadata else None)
             
-            # Validate user session using guardrails
-            # Token might be in metadata or passed separately
-            token = user_context_dict.get("token") or (request.metadata.dict() if request.metadata and hasattr(request.metadata, 'dict') else {}).get("token")
+            auth_result = self.security_manager.validate_user(ctx_dict, token=token)
+            if not auth_result["valid"]:
+                return self._create_error_response(f"Authentication failed: {auth_result.get('error')}", start_time)
             
-            validation_result = self.security_manager.validate_user(
-                user_context_dict,
-                token=token
-            )
+            if not self.security_manager.check_rate_limit(request.user_context.user_id, ctx_dict):
+                return self._create_error_response("Rate limit exceeded", start_time)
             
-            if not validation_result["valid"]:
-                logger.warning(f"User validation failed: {validation_result.get('error')}")
-                return {
-                    "success": False,
-                    "content": f"Authentication failed: {validation_result.get('error', 'Invalid session')}",
-                    "metadata": {"error": validation_result.get("error")},
-                    "processing_time": time.time() - start_time
-                }
+            # 3. Planning
+            strategy = agent_specs.processing.execution_strategy if agent_specs.processing else "direct"
             
-            # Update user context with validated session info
-            if validation_result.get("user_context"):
-                validated_context = validation_result["user_context"]
-                # Merge validated context back into UserContext dataclass
-                # Update fields that exist in UserContext
-                for key, value in validated_context.items():
-                    if hasattr(request.user_context, key):
-                        setattr(request.user_context, key, value)
-            
-            # Check rate limiting with validated user context
-            user_id = request.user_context.user_id
-            if not self.security_manager.check_rate_limit(user_id, asdict(request.user_context)):
-                logger.warning(f"Rate limit exceeded for user: {user_id}")
-                return {
-                    "success": False,
-                    "content": "Rate limit exceeded. Please try again later.",
-                    "metadata": {"error": "Rate limit exceeded"},
-                    "processing_time": time.time() - start_time
-                }
-            
-            # 5. Check if reasoning is enabled
-            reasoning_enabled = False
-            if agent_specs.processing:
-                execution_strategy = agent_specs.processing.execution_strategy
-                reasoning_enabled = execution_strategy in ["reasoned", "adaptive"]
-            
-            # 6. Execute based on reasoning flag
-            if reasoning_enabled:
-                # Use reasoning engine (two-phase: plan then execute)
-                logger.info("Reasoning enabled - creating execution plan")
+            if strategy in ["reasoned", "adaptive"]:
+                logger.info(f"Creating execution plan using strategy: {strategy}")
                 plan = await self.create_execution_plan(agent_specs, request)
-                result = await self.execute_plan(plan, request, None)  # agent not needed for execution
+                result = await self.execute_plan(plan, request)
             else:
-                # Direct execution via workflow engine
-                logger.info("Reasoning disabled - executing directly via workflow engine")
-                # Create a direct plan without reasoning
+                logger.info("Executing directly (no reasoning)")
+                estimates = self._get_estimates(agent_specs)
                 plan = ExecutionPlan(
                     original_specs=agent_specs,
                     optimized_specs=agent_specs,
                     reasoning_applied=False,
                     confidence=1.0,
                     reasoning_notes={"strategy": "direct"},
-                    estimated_cost=self._estimate_cost(agent_specs),
-                    estimated_latency=self._estimate_latency(agent_specs)
+                    estimated_cost=estimates["cost"],
+                    estimated_latency=estimates["latency"]
                 )
                 result = await self.execute_agent_request(plan, request)
             
-            # 7. Return response
             result["processing_time"] = time.time() - start_time
             return result
             
         except Exception as e:
-            logger.error(f"Error processing agent request: {str(e)}")
-            return {
-                "success": False,
-                "content": "An error occurred processing your request.",
-                "metadata": {"error": str(e)},
-                "processing_time": time.time() - start_time
-            }
+            logger.exception("Error processing agent request")
+            return self._create_error_response(f"Internal error: {str(e)}", start_time)
 
+    def _create_error_response(self, message: str, start_time: float) -> Dict[str, Any]:
+        """Helper to create consistent error responses"""
+        return {
+            "success": False,
+            "content": message,
+            "metadata": {"error": message},
+            "processing_time": time.time() - start_time
+        }
+
+    @observe(name="cortex_create_execution_plan")
     async def create_execution_plan(
         self,
         agent_specs: AgentExecutionSpec,
         request: BrainRequest
     ) -> ExecutionPlan:
-        """
-        PHASE 1: PLANNING
-        
-        Create an execution plan from agent specifications.
-        Optionally uses reasoning engine to optimize the plan.
-        
-        Returns:
-            ExecutionPlan with optimized specs and metadata
-        """
-        logger.info(f"Planning phase started - strategy: {agent_specs.processing.execution_strategy}")
-        
+        """Create execution plan based on strategy"""
         strategy = agent_specs.processing.execution_strategy
         
-        if strategy == "direct":
-            # Skip reasoning - use agent specs directly
-            return self._create_direct_plan(agent_specs)
-        
-        elif strategy == "reasoned":
-            # Always use reasoning
+        if strategy == "reasoned":
             return await self._create_reasoned_plan(agent_specs, request)
         
         elif strategy == "adaptive":
@@ -319,63 +242,52 @@ class CortexFlow:
             logger.warning(f"Unknown execution strategy: {strategy}, using direct")
             return self._create_direct_plan(agent_specs)
     
+    @observe(name="cortex_create_direct_plan")
     def _create_direct_plan(self, agent_specs: AgentExecutionSpec) -> ExecutionPlan:
-        """Create execution plan without reasoning"""
-        logger.info("Creating direct execution plan (no reasoning)")
-        
+        estimates = self._get_estimates(agent_specs)
         return ExecutionPlan(
             original_specs=agent_specs,
             optimized_specs=agent_specs,
             reasoning_applied=False,
             confidence=1.0,
             reasoning_notes={"strategy": "direct", "message": "Skipped reasoning as requested"},
-            estimated_cost=self._estimate_cost(agent_specs),
-            estimated_latency=self._estimate_latency(agent_specs)
+            estimated_cost=estimates["cost"],
+            estimated_latency=estimates["latency"]
         )
     
+    @observe(name="cortex_create_reasoned_plan")
     async def _create_reasoned_plan(
         self,
         agent_specs: AgentExecutionSpec,
         request: BrainRequest
     ) -> ExecutionPlan:
-        """Create execution plan with reasoning (always optimize)"""
-        logger.info("Creating reasoned execution plan (with reasoning)")
-        
         try:
-            # Get reasoning suggestions
             reasoning_result = await self.reasoning_engine.optimize_execution_specs(
                 original_specs=agent_specs,
                 request=request,
                 context=self._get_execution_context()
             )
             
-            optimized_specs = reasoning_result.get("optimized_specs", agent_specs)
-            confidence = reasoning_result.get("confidence", 0.8)
-            
             return ExecutionPlan(
                 original_specs=agent_specs,
-                optimized_specs=optimized_specs,
+                optimized_specs=reasoning_result.get("optimized_specs", agent_specs),
                 reasoning_applied=True,
-                confidence=confidence,
+                confidence=reasoning_result.get("confidence", 0.8),
                 reasoning_notes=reasoning_result.get("notes", {}),
                 estimated_cost=reasoning_result.get("estimated_cost", 0.0),
                 estimated_latency=reasoning_result.get("estimated_latency", 0.0)
             )
-        
         except Exception as e:
-            logger.error(f"Reasoning failed, falling back to direct plan: {e}")
+            logger.warning(f"Reasoning failed, falling back to direct: {e}")
             return self._create_direct_plan(agent_specs)
     
+    @observe(name="cortex_create_adaptive_plan")
     async def _create_adaptive_plan(
         self,
         agent_specs: AgentExecutionSpec,
         request: BrainRequest
     ) -> ExecutionPlan:
-        """Create adaptive plan with reasoning fallback"""
-        logger.info("Creating adaptive execution plan (reasoning with confidence threshold)")
-        
         try:
-            # Get reasoning suggestions
             reasoning_result = await self.reasoning_engine.optimize_execution_specs(
                 original_specs=agent_specs,
                 request=request,
@@ -402,6 +314,7 @@ class CortexFlow:
                 # Low confidence - stick with agent specs
                 logger.info(f"Reasoning confidence too low ({confidence} < {threshold}), using agent specs")
                 
+                estimates = self._get_estimates(agent_specs)
                 return ExecutionPlan(
                     original_specs=agent_specs,
                     optimized_specs=agent_specs,
@@ -409,19 +322,17 @@ class CortexFlow:
                     confidence=1.0,
                     reasoning_notes={
                         "skipped": f"confidence {confidence} < {threshold}",
-                        "reasoning_suggestions": reasoning_result.get("notes", {})
+                        "suggestion": reasoning_result.get("notes", {})
                     },
-                    estimated_cost=self._estimate_cost(agent_specs),
-                    estimated_latency=self._estimate_latency(agent_specs)
+                    estimated_cost=estimates["cost"],
+                    estimated_latency=estimates["latency"]
                 )
-        
         except Exception as e:
-            logger.error(f"Adaptive planning failed, falling back to direct plan: {e}")
+            logger.warning(f"Adaptive planning failed, falling back to direct: {e}")
             return self._create_direct_plan(agent_specs)
     
     def _get_execution_context(self) -> Dict[str, Any]:
-        """Get current execution context for reasoning"""
-        # Get available providers from PROVIDER_CONFIGS
+        """Gather context for reasoning engine"""
         from ..providers.provider_registry import PROVIDER_CONFIGS
         from ..tools.tool_registry import TOOLS
         from ..data_sources.data_source_registry import DATA_SOURCES
@@ -436,98 +347,53 @@ class CortexFlow:
             }
         }
     
-    def _estimate_cost(self, specs: AgentExecutionSpec) -> float:
-        """Estimate execution cost based on specs"""
-        # Placeholder - would implement actual cost estimation
-        cost = 0.0
-        
-        if specs.provider:
-            # Rough cost estimate based on tokens
-            estimated_tokens = specs.provider.max_tokens if hasattr(specs.provider, 'max_tokens') else 2000
-            cost += estimated_tokens * 0.00001  # $0.01 per 1K tokens (placeholder)
-        
-        # Add data source costs
-        cost += len(specs.data_sources) * 0.001
-        
-        # Add tool costs
-        cost += len(specs.tools) * 0.005
-        
-        return round(cost, 4)
+    def _get_estimates(self, specs: AgentExecutionSpec) -> Dict[str, float]:
+        try:
+            eval_manager = get_evaluation_manager()
+            stats = eval_manager.get_latency_statistics() if hasattr(eval_manager, 'get_latency_statistics') else None
+            
+            return {
+                "cost": CostEstimator.estimate(specs),
+                "latency": LatencyEstimator.estimate(specs, stats)
+            }
+        except Exception as e:
+            logger.warning(f"Estimation failed: {e}")
+            return {"cost": 0.0, "latency": 1.0}
     
-    def _estimate_latency(self, specs: AgentExecutionSpec) -> float:
-        """Estimate execution latency based on specs"""
-        # Placeholder - would implement actual latency estimation
-        latency = 0.5  # Base latency
-        
-        # Add data source latency
-        latency += len(specs.data_sources) * 0.3
-        
-        # Add tool latency
-        latency += len(specs.tools) * 0.5
-        
-        # Add provider latency
-        if specs.provider:
-            latency += 1.5
-        
-        return round(latency, 2)
-    
+    @observe(name="cortex_execute_plan")
     async def execute_plan(
         self,
         plan: ExecutionPlan,
         request: BrainRequest,
         agent: Optional[IAgent] = None
     ) -> Dict[str, Any]:
-        """
-        PHASE 2: EXECUTION
-        
-        Execute the execution plan via workflow engine.
-        """
-        logger.info(f"Execution phase started - reasoning_applied: {plan.reasoning_applied}")
-        
+        """Execute plan via workflow engine"""
         try:
-            # Execute via workflow engine
-            result = await self.workflow_engine.execute_plan(
-                plan=plan,
-                request=request
-            )
-            
-            # Add planning metadata to result
+            result = await self.workflow_engine.execute_plan(plan=plan, request=request)
             result["execution_plan"] = plan.to_dict()
-            
             return result
-            
         except Exception as e:
             logger.error(f"Execution failed: {e}")
             raise
     
+    @observe(name="cortex_execute_agent_request")
     async def execute_agent_request(
         self,
         plan: ExecutionPlan,
         request: BrainRequest
     ) -> Dict[str, Any]:
-        """
-        Execute the agent request according to the execution plan.
-        """
         return await self.execute_plan(plan, request, None)
     
     async def shutdown(self):
-        """Shutdown CortexFlow and all its components"""
         logger.info("Shutting down CortexFlow...")
-        
         try:
-            # Shutdown workflow engine
             if self.workflow_engine:
                 await self.workflow_engine.shutdown()
             
-            # Shutdown reasoning engine (if it has a shutdown method)
             if self.reasoning_engine and hasattr(self.reasoning_engine, 'shutdown'):
                 await self.reasoning_engine.shutdown()
             
-            # Reset initialization state
             self._initialized = False
-            
             logger.info("CortexFlow shutdown complete")
         except Exception as e:
-            logger.error(f"Error during CortexFlow shutdown: {e}")
-
-
+            logger.error(f"Error during shutdown: {e}")

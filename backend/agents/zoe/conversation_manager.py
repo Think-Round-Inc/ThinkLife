@@ -44,7 +44,7 @@ class ZoeConversationManager:
         # Configuration
         self.max_message_history = 50
         
-        logger.info("Zoe Conversation Manager initialized (no session management)")
+        logger.info("Zoe Conversation Manager initialized")
     
     def add_message(
         self, 

@@ -126,7 +126,7 @@ class ZoeCore:
         
         # Add empathetic closing if needed
         if len(response) > 200 and not any(word in response.lower() for word in ["here", "support", "help"]):
-            response += "\n\nI'm here if you need anything else. 💙"
+            response += "\n\nI'm here if you need anything else."
         
         return response
     
@@ -155,11 +155,11 @@ class ZoeCore:
     
     def get_fallback_response(self) -> str:
         """Get fallback response when LLM fails"""
-        return "I'm having a moment of difficulty connecting my thoughts. Could we try that again? I really want to be here for you. 💙"
+        return "I'm having a moment of difficulty connecting my thoughts. Could we try that again? I really want to be here for you."
     
     def get_error_response(self) -> str:
         """Get empathetic error response"""
-        return "I'm experiencing some technical challenges right now. Please bear with me and try again in a moment. You're important to me, and I want to give you my best. 💙"
+        return "I'm experiencing some technical challenges right now. Please bear with me and try again in a moment. You're important to me, and I want to give you my best."
     
     def health_check(self) -> Dict[str, Any]:
         """Health check for ZoeCore"""
@@ -248,4 +248,4 @@ class ZoeCore:
     
     def get_conversation_history(self, session_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get conversation history for a session"""
-        return self.conversation_manager.get_conversation_history(session_id, limit) 
+        return self.conversation_manager.get_conversation_history(session_id, limit)

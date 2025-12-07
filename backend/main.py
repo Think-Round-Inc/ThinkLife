@@ -1,40 +1,47 @@
 """
 ThinkLife Backend with Brain Integration
-
 This is the main FastAPI application that integrates the ThinkLife Brain
 system with existing chatbot functionality.
 """
 
 import logging
 import os
+import sys
+import warnings
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
+
+# patch for Python < 3.10 to support packages_distributions
+# This fixes compatibility issues with google-api-core and other libs on Python 3.9
+if sys.version_info < (3, 10):
+    try:
+        import importlib.metadata
+        import importlib_metadata
+        if not hasattr(importlib.metadata, "packages_distributions"):
+            importlib.metadata.packages_distributions = importlib_metadata.packages_distributions
+    except ImportError:
+        pass
+
+# Suppress Google API Core Python 3.9 EOL warning
+warnings.filterwarnings("ignore", message="You are using a Python version.*past its end of life", category=FutureWarning, module="google.api_core")
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-
-# Load environment variables (must be first!)
+# Load env
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-
-# Import Brain system
+# Imports
 from brain import CortexFlow
-
-# Import Zoe AI Companion
 from agents.zoe import ZoeService
-
-
-# Import TTS Service
 from agents.zoe.tts_service import tts_service
+from middleware.keycloak_auth import KeycloakAuthMiddleware, get_user_context, extract_token_from_header, extract_token_from_cookie, get_user_id
+from brain.guardrails import SessionManager
 
 # Global instances
 brain_instance = None
@@ -43,13 +50,11 @@ zoe_service_instance = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage application lifespan"""
     global brain_instance, zoe_service_instance
 
-    # Startup
-    logger.info("Starting ThinkLife Backend with Brain and Zoe integration...")
+    logger.info("Starting ThinkLife Backend...")
 
-    # Initialize Brain 
+    # Brain Config
     brain_config = {
         "providers": {
             "openai": {
@@ -64,28 +69,20 @@ async def lifespan(app: FastAPI):
 
     brain_instance = CortexFlow(brain_config)
     await brain_instance.initialize()
-    logger.info("Brain system (CortexFlow) initialized")
+    logger.info("CortexFlow initialized")
 
-    # Initialize Zoe Service
     zoe_service_instance = ZoeService()
     await zoe_service_instance.initialize()
-    logger.info("Zoe AI Companion initialized (Plugin architecture)")
+    logger.info("ZoeService initialized")
 
     yield
 
-    # Shutdown
-    logger.info("Shutting down ThinkLife Backend...")
-    
-    if brain_instance:
-        await brain_instance.shutdown()
-    
-    if zoe_service_instance:
-        await zoe_service_instance.shutdown()
-
+    logger.info("Shutting down...")
+    if brain_instance: await brain_instance.shutdown()
+    if zoe_service_instance: await zoe_service_instance.shutdown()
     logger.info("Shutdown complete")
 
 
-# Initialize FastAPI app
 app = FastAPI(
     title="ThinkLife Backend with Brain",
     description="AI-powered backend with centralized Brain orchestration",
@@ -93,7 +90,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -104,31 +100,22 @@ app.add_middleware(
         "http://127.0.0.1:3001",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Add Keycloak authentication middleware
-from middleware.keycloak_auth import KeycloakAuthMiddleware
 app.add_middleware(KeycloakAuthMiddleware)
 
 
-
-
-# Pydantic models for API validation
+# Models
 class APIBrainRequest(BaseModel):
-    """API Brain request model"""
-
     message: str
     application: str
     user_context: Dict[str, Any] = {}
     session_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
-
 class APIBrainResponse(BaseModel):
-    """API Brain response model"""
-
     success: bool
     message: Optional[str] = None
     data: Optional[Dict[str, Any]] = None
@@ -136,640 +123,268 @@ class APIBrainResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
     timestamp: str
 
-
 class HealthResponse(BaseModel):
-    """Health check response"""
-
     status: str
     brain_status: Dict[str, Any]
     timestamp: str
 
 
+# Dependencies
 def get_brain() -> CortexFlow:
-    """Get Brain instance"""
-    if not brain_instance:
-        raise HTTPException(status_code=503, detail="Brain system not initialized")
+    if not brain_instance: raise HTTPException(503, "Brain not initialized")
     return brain_instance
 
-
 def get_zoe() -> ZoeService:
-    """Get Zoe service instance"""
-    if not zoe_service_instance:
-        raise HTTPException(status_code=503, detail="Zoe system not initialized")
+    if not zoe_service_instance: raise HTTPException(503, "Zoe not initialized")
     return zoe_service_instance
 
 
-# Brain API endpoints
-@app.options("/api/brain")
-async def brain_options():
-    """Handle CORS preflight requests for brain endpoint"""
-    return {"message": "OK"}
-
-
+# Brain API
 @app.post("/api/brain", response_model=APIBrainResponse)
 async def process_brain_request(
     request: APIBrainRequest, 
     brain: CortexFlow = Depends(get_brain),
     http_request: Request = None
-) -> APIBrainResponse:
-    """
-    Process a request through the ThinkLife Brain system
-
-    This is the main endpoint that all frontend applications use
-    to interact with AI capabilities.
-    """
+):
     try:
-        # Validate application type
-        valid_applications = [
-            "healing-rooms",
-            "inside-our-ai",
-            "chatbot",
-            "compliance",
-            "exterior-spaces",
-            "general",
-        ]
+        valid_apps = ["healing-rooms", "inside-our-ai", "chatbot", "compliance", "exterior-spaces", "general"]
+        if request.application not in valid_apps:
+            raise HTTPException(400, f"Invalid app. Must be: {valid_apps}")
 
-        if request.application not in valid_applications:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid application. Must be one of: {valid_applications}",
-            )
-
-        # Get user context from Keycloak session (from middleware)
-        from middleware.keycloak_auth import get_user_context, extract_token_from_header, extract_token_from_cookie
-        keycloak_user_context = get_user_context(http_request) if http_request else {}
+        kc_context = get_user_context(http_request) if http_request else {}
+        token = extract_token_from_header(http_request) or extract_token_from_cookie(http_request) if http_request else None
         
-        # Extract token from request if available
-        token = None
-        if http_request:
-            token = extract_token_from_header(http_request) or extract_token_from_cookie(http_request)
-        
-        # Merge user contexts - Keycloak session takes precedence
-        merged_user_context = {**request.user_context, **keycloak_user_context}
-        
-        # Add token to metadata if available
+        merged_context = {**request.user_context, **kc_context}
         metadata = request.metadata or {}
-        if token:
-            metadata["token"] = token
+        if token: metadata["token"] = token
         
-        # Prepare Brain request
-        brain_request_data = {
+        data = {
             "id": request.session_id,
             "message": request.message,
             "application": request.application,
-            "user_context": merged_user_context,
+            "user_context": merged_context,
             "metadata": metadata,
         }
 
-        # Process with Brain
-        response_data = await brain.process_request(brain_request_data)
+        res = await brain.process_request(data)
 
-        # Return formatted response
         return APIBrainResponse(
-            success=response_data.get("success", False),
-            message=response_data.get("message"),
-            data=response_data.get("data"),
-            error=response_data.get("error"),
-            metadata=response_data.get("metadata"),
-            timestamp=response_data.get("timestamp", datetime.now().isoformat()),
+            success=res.get("success", False),
+            message=res.get("message"),
+            data=res.get("data"),
+            error=res.get("error"),
+            metadata=res.get("metadata"),
+            timestamp=res.get("timestamp", datetime.now().isoformat()),
         )
 
     except Exception as e:
-        logger.error(f"Error processing Brain request: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error processing Brain request")
+        raise HTTPException(500, str(e))
 
 
 @app.get("/api/brain/health", response_model=HealthResponse)
-async def get_brain_health(
-    brain: CortexFlow = Depends(get_brain),
-) -> HealthResponse:
-    """Get Brain system health status"""
+async def get_brain_health(brain: CortexFlow = Depends(get_brain)):
     try:
-        health_status = await brain.get_health_status()
-
+        status = await brain.get_health_status()
         return HealthResponse(
-            status=health_status.get("overall", "unknown"),
-            brain_status=health_status,
+            status=status.get("overall", "unknown"),
+            brain_status=status,
             timestamp=datetime.now().isoformat(),
         )
-
     except Exception as e:
-        logger.error(f"Error getting Brain health: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Health check error: {e}")
+        raise HTTPException(500, str(e))
 
 
 @app.get("/api/brain/analytics")
 async def get_brain_analytics(brain: CortexFlow = Depends(get_brain)):
-    """Get Brain system analytics"""
     try:
-        analytics = await brain.get_analytics()
         return {
             "success": True,
-            "data": analytics,
+            "data": await brain.get_analytics(),
             "timestamp": datetime.now().isoformat(),
         }
-
     except Exception as e:
-        logger.error(f"Error getting Brain analytics: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Analytics error: {e}")
+        raise HTTPException(500, str(e))
 
 
-# Session management endpoints
+# Session API
 @app.post("/api/session/logout")
-async def logout_session(
-    http_request: Request,
-    session_id: Optional[str] = None
-):
-    """
-    End a user session (logout)
-    Can be called with session_id or will use session from token
-    """
+async def logout_session(http_request: Request, session_id: Optional[str] = None):
     try:
-        from middleware.keycloak_auth import get_user_context
-        from brain.guardrails import SessionManager
+        ctx = get_user_context(http_request)
+        manager = SessionManager()
         
-        user_context = get_user_context(http_request)
-        session_manager = SessionManager()
+        sid = session_id or ctx.get("session_id")
+        uid = ctx.get("user_id")
         
-        # Get session_id from request or user_context
-        if not session_id:
-            session_id = user_context.get("session_id")
-        
-        user_id = user_context.get("user_id")
         token = getattr(http_request.state, "token", None)
-        
-        # Extract token_state from token if available
-        token_state = None
+        state = None
         if token:
             try:
                 import jwt
-                decoded = jwt.decode(token, options={"verify_signature": False})
-                token_state = decoded.get("session_state")
-            except:
-                pass
+                state = jwt.decode(token, options={"verify_signature": False}).get("session_state")
+            except: pass
         
-        # End session
-        success = session_manager.end_session(
-            session_id=session_id,
-            user_id=user_id if not session_id else None,
-            token_state=token_state if not session_id else None
-        )
+        success = manager.end_session(session_id=sid, user_id=uid if not sid else None, token_state=state if not sid else None)
         
-        if success:
-            return {
-                "success": True,
-                "message": "Session ended successfully",
-                "timestamp": datetime.now().isoformat(),
-            }
-        else:
-            return {
-                "success": False,
-                "message": "Session not found or already ended",
-                "timestamp": datetime.now().isoformat(),
-            }
-    
+        return {
+            "success": success,
+            "message": "Session ended" if success else "Session not found",
+            "timestamp": datetime.now().isoformat()
+        }
     except Exception as e:
-        logger.error(f"Error ending session: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Logout error: {e}")
+        raise HTTPException(500, str(e))
 
 
 @app.get("/api/session/stats")
 async def get_session_stats():
-    """Get session statistics for tracking"""
-    try:
-        from brain.guardrails import SessionManager
-        
-        session_manager = SessionManager()
-        stats = session_manager.get_session_stats()
-        
-        return {
-            "success": True,
-            "data": stats,
-            "timestamp": datetime.now().isoformat(),
-        }
-    
-    except Exception as e:
-        logger.error(f"Error getting session stats: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"success": True, "data": SessionManager().get_session_stats(), "timestamp": datetime.now().isoformat()}
 
 
 @app.get("/api/session/user/{user_id}")
 async def get_user_sessions(user_id: str, include_ended: bool = False):
-    """Get all sessions for a user"""
     try:
-        from brain.guardrails import SessionManager
-        
-        session_manager = SessionManager()
-        sessions = session_manager.get_user_sessions(user_id, include_ended=include_ended)
-        
-        return {
-            "success": True,
-            "data": {
-                "user_id": user_id,
-                "sessions": sessions,
-                "count": len(sessions)
-            },
-            "timestamp": datetime.now().isoformat(),
-        }
-    
+        sessions = SessionManager().get_user_sessions(user_id, include_ended=include_ended)
+        return {"success": True, "data": {"user_id": user_id, "sessions": sessions, "count": len(sessions)}, "timestamp": datetime.now().isoformat()}
     except Exception as e:
-        logger.error(f"Error getting user sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Get sessions error: {e}")
+        raise HTTPException(500, str(e))
 
 
 @app.get("/api/session/{session_id}")
 async def get_session(session_id: str):
-    """Get session details by ID"""
-    try:
-        from brain.guardrails import SessionManager
-        
-        session_manager = SessionManager()
-        session = session_manager.get_session(session_id)
-        
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-        
-        return {
-            "success": True,
-            "data": session.to_dict(),
-            "timestamp": datetime.now().isoformat(),
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting session: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    session = SessionManager().get_session(session_id)
+    if not session: raise HTTPException(404, "Session not found")
+    return {"success": True, "data": session.to_dict(), "timestamp": datetime.now().isoformat()}
 
 
-# Zoe AI Companion endpoints
-@app.options("/api/zoe/chat")
-async def zoe_chat_options():
-    """Handle CORS preflight requests for Zoe chat endpoint"""
-    return {"message": "OK"}
-
-
+# Zoe API
 @app.post("/api/zoe/chat")
 async def zoe_chat_endpoint(
     request: Dict[str, Any], 
     zoe: ZoeService = Depends(get_zoe),
     http_request: Request = None
 ):
-    """
-    Chat with Zoe AI Companion
-
-    This endpoint provides access to Zoe, the empathetic AI companion.
-    All LLM processing goes through: ZoeService - Plugin - CortexFlow - WorkflowEngine
-    """
     try:
-        # Validate request structure
-        if not isinstance(request, dict):
-            raise HTTPException(status_code=400, detail="Invalid request format")
-
-        # Get user context from Keycloak session (from middleware)
-        from middleware.keycloak_auth import get_user_context, get_user_id
-        keycloak_user_context = get_user_context(http_request) if http_request else {}
-        keycloak_user_id = get_user_id(http_request) if http_request else None
+        kc_context = get_user_context(http_request) if http_request else {}
+        kc_uid = get_user_id(http_request) if http_request else None
         
-        # Extract request data
-        message = request.get("message", "")
-        user_id = keycloak_user_id or request.get("user_id", "anonymous")
-        session_id = request.get("session_id")
-        user_context = {**request.get("user_context", {}), **keycloak_user_context}
+        msg = request.get("message", "")
+        uid = kc_uid or request.get("user_id", "anonymous")
+        sid = request.get("session_id")
+        ctx = {**request.get("user_context", {}), **kc_context}
 
-        # Check ACE score restriction - prevent chat access for scores >= 4
-        ace_score = user_context.get("ace_score", 0)
-        if ace_score >= 4:
-            raise HTTPException(
-                status_code=403,
-                detail="Chat access is restricted for your safety. Please contact info@thinkround.org to learn more about our Trauma Transformation Training program.",
-            )
+        if ctx.get("ace_score", 0) >= 4:
+            raise HTTPException(403, "Chat restricted due to ACE score safety policy.")
 
-        # Validate required fields
-        if not message or not message.strip():
-            raise HTTPException(
-                status_code=400, detail="Message is required and cannot be empty"
-            )
+        if not msg.strip(): raise HTTPException(400, "Message empty")
+        if len(msg) > 10000: raise HTTPException(400, "Message too long")
 
-        if len(message) > 10000:
-            raise HTTPException(
-                status_code=400, detail="Message too long (max 10,000 characters)"
-            )
-
-        # Process through plugin architecture
-        response = await zoe.process_message(
-            message=message,
-            user_id=user_id,
-            session_id=session_id,
-            user_context=user_context,
-            application="chatbot"
+        return await zoe.process_message(
+            message=msg, user_id=uid, session_id=sid, user_context=ctx, application="chatbot"
         )
-
-        return response
-
     except Exception as e:
-        logger.error(f"Error in Zoe chat endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/zoe/sessions/{user_id}")
-async def get_zoe_user_sessions(
-    user_id: str, limit: int = 10, zoe: ZoeService = Depends(get_zoe)
-):
-    """
-    Get user sessions - sessions are managed by brain's unified session system
-    Use /api/session/user/{user_id} instead
-    """
-    try:
-        # Sessions are managed by brain, not Zoe
-        # Redirect to brain's session endpoint
-        return {
-            "success": True,
-            "sessions": [],
-            "message": "Sessions are managed by brain's unified session system. Use /api/session/user/{user_id}",
-            "timestamp": datetime.now().isoformat(),
-        }
-    except Exception as e:
-        logger.error(f"Error getting Zoe user sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Zoe chat error")
+        raise HTTPException(500, str(e))
 
 
 @app.get("/api/zoe/sessions/{session_id}/history")
 async def get_zoe_session_history(session_id: str, zoe: ZoeService = Depends(get_zoe)):
-    """
-    Get conversation history for a Zoe session
-    Uses session_id from brain's unified session management
-    """
-    try:
-        history = zoe.get_conversation_history(session_id)
-        return {
-            "success": True,
-            "history": history,
-            "session_id": session_id,
-            "timestamp": datetime.now().isoformat(),
-        }
-    except Exception as e:
-        logger.error(f"Error getting Zoe session history: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "success": True, 
+        "history": zoe.get_conversation_history(session_id),
+        "session_id": session_id,
+        "timestamp": datetime.now().isoformat()
+    }
 
 
 @app.delete("/api/zoe/sessions/{session_id}")
 async def end_zoe_session(session_id: str, zoe: ZoeService = Depends(get_zoe)):
-    """
-    Clear conversation history for a Zoe session
-    Note: Session lifecycle is managed by brain's unified session system
-    This only clears the conversation history, not the session itself
-    """
-    try:
-        zoe.clear_conversation(session_id)
-        return {
-            "success": True,
-            "message": "Conversation history cleared successfully",
-            "session_id": session_id,
-            "note": "Session lifecycle is managed by brain's unified session system",
-            "timestamp": datetime.now().isoformat(),
-        }
-    except Exception as e:
-        logger.error(f"Error clearing Zoe conversation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    zoe.clear_conversation(session_id)
+    return {"success": True, "message": "History cleared", "session_id": session_id, "timestamp": datetime.now().isoformat()}
 
 
 @app.get("/api/zoe/health")
 async def get_zoe_health(zoe: ZoeService = Depends(get_zoe)):
-    """Get Zoe health status"""
-    try:
-        health = await zoe.health_check()
-        return health
-    except Exception as e:
-        logger.error(f"Error getting Zoe health: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return await zoe.health_check()
 
 
-@app.get("/api/session-analytics")
-async def get_session_analytics(
-    user_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    brain: CortexFlow = Depends(get_brain),
-    zoe: ZoeService = Depends(get_zoe),
-):
-    """Get session analytics and statistics"""
-    try:
-        # Get session-specific data if requested
-        session_data = {}
-        if session_id:
-            session_data = zoe.get_conversation_history(session_id)
-
-        return {
-            "success": True,
-            "data": {
-                "session_data": session_data,
-                "user_id": user_id,
-                "session_id": session_id,
-            },
-            "timestamp": datetime.now().isoformat(),
-        }
-
-    except Exception as e:
-        logger.error(f"Error getting session analytics: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Legacy chatbot endpoints (redirects to Zoe for backward compatibility)
-@app.options("/api/chat")
-async def chat_options():
-    """Handle CORS preflight requests for legacy chat endpoint"""
-    return {"message": "OK"}
-
-
+# Legacy / App Endpoints
 @app.post("/api/chat")
-async def legacy_chat_endpoint(
-    request: Dict[str, Any], zoe: ZoeService = Depends(get_zoe)
-):
-    """
-    Legacy chat endpoint for backward compatibility
-
-    This endpoint maintains compatibility with existing frontend code.
-    All LLM processing goes through: ZoeService - Plugin - CortexFlow - WorkflowEngine
-    """
+async def legacy_chat_endpoint(request: Dict[str, Any], zoe: ZoeService = Depends(get_zoe)):
     try:
-        # Extract request data
-        message = request.get("message", "")
-        user_id = request.get("user_id", "anonymous")
-        session_id = request.get("session_id")
-        user_context = request.get("user_context", {})
+        msg = request.get("message", "")
+        uid = request.get("user_id", "anonymous")
+        sid = request.get("session_id")
+        ctx = request.get("user_context", {})
 
-        # Check ACE score restriction - prevent chat access for scores >= 4
-        ace_score = user_context.get("ace_score", 0)
-        if ace_score >= 4:
-            return {
-                "response": "Chat access is restricted for your safety. Please contact info@thinkround.org to learn more about our Trauma Transformation Training program.",
-                "success": False,
-                "error": "ACE score restriction",
-                "restricted": True,
-                "timestamp": datetime.now().isoformat(),
-            }
+        if ctx.get("ace_score", 0) >= 4:
+            return {"success": False, "error": "ACE score restriction", "restricted": True}
 
-        # Validate required fields
-        if not message or not message.strip():
-            return {
-                "response": "I didn't receive a message. What would you like to talk about?",
-                "success": False,
-                "error": "No message provided",
-                "timestamp": datetime.now().isoformat(),
-            }
-
-        if len(message) > 10000:
-            return {
-                "response": "Your message is too long. Please keep it under 10,000 characters.",
-                "success": False,
-                "error": "Message too long",
-                "timestamp": datetime.now().isoformat(),
-            }
-
-        # Process through NEW plugin architecture
-        zoe_response = await zoe.process_message(
-            message=message,
-            user_id=user_id,
-            session_id=session_id,
-            user_context=user_context,
-            application="chatbot"
-        )
-
-        # Generate TTS audio if avatar mode is enabled
-        audio_data = None
-        avatar_mode = user_context.get("avatar_mode", False)
-        test_tts = user_context.get("test_tts", False)
-
-        if (avatar_mode or test_tts) and zoe_response.get("success", False):
-            response_text = zoe_response.get("response", "")
-            if response_text:
-                audio_data = await tts_service.generate_speech(response_text)
-                if audio_data:
-                    logger.info("TTS audio generated successfully")
-                else:
-                    logger.warning("TTS audio generation failed")
-
-        # Transform to legacy response format
-        response_data = {
-            "response": zoe_response.get("response", ""),
-            "success": zoe_response.get("success", False),
-            "error": zoe_response.get("error"),
-            "session_id": zoe_response.get("session_id"),
-            "timestamp": zoe_response.get("timestamp", datetime.now().isoformat()),
-        }
-
-        # Add audio data if generated
-        if audio_data:
-            response_data["audio_data"] = audio_data
-
-        return response_data
-
-    except Exception as e:
-        logger.error(f"Error in legacy chat endpoint: {str(e)}")
+        if not msg.strip(): return {"success": False, "error": "No message"}
+        
+        res = await zoe.process_message(msg, uid, sid, ctx, "chatbot")
+        
+        audio = None
+        if (ctx.get("avatar_mode") or ctx.get("test_tts")) and res.get("success"):
+            audio = await tts_service.generate_speech(res.get("response", ""))
+            
         return {
-            "response": "I apologize, but I'm experiencing technical difficulties. I'm still here for you though.",
-            "success": False,
-            "error": str(e),
-            "timestamp": datetime.now().isoformat(),
+            "response": res.get("response", ""),
+            "success": res.get("success", False),
+            "error": res.get("error"),
+            "session_id": res.get("session_id"),
+            "audio_data": audio,
+            "timestamp": datetime.now().isoformat()
         }
+    except Exception as e:
+        logger.exception("Legacy chat error")
+        return {"success": False, "error": str(e), "response": "Technical error"}
 
 
-# Helper function for application-specific endpoints
-async def create_application_endpoint(
-    request: Dict[str, Any],
-    application: str,
-    brain: CortexFlow = Depends(get_brain),
-):
-    """Generic handler for application-specific endpoints"""
-    api_request = APIBrainRequest(
+# Generic App Handlers
+@app.post("/api/{app_name}")
+async def generic_app_endpoint(app_name: str, request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)):
+    # Validate app_name against allowed list if needed, or let Brain handle it
+    req = APIBrainRequest(
         message=request.get("message", ""),
-        application=application,
+        application=app_name,
         user_context=request.get("user_context", {}),
         session_id=request.get("session_id"),
-        metadata=request.get("metadata", {}),
+        metadata=request.get("metadata", {})
     )
+    return await process_brain_request(req, brain)
 
-    return await process_brain_request(api_request, brain)
-
-
-# Application-specific endpoints
+# Explicit mappings for backward compatibility
 @app.post("/api/healing-rooms")
-async def healing_rooms_endpoint(
-    request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)
-):
-    """Healing rooms specific endpoint"""
-    return await create_application_endpoint(request, "healing-rooms", brain)
-
+async def healing_rooms(r: Dict[str, Any], b: CortexFlow = Depends(get_brain)): return await generic_app_endpoint("healing-rooms", r, b)
 
 @app.post("/api/inside-our-ai")
-async def inside_our_ai_endpoint(
-    request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)
-):
-    """Inside our AI specific endpoint"""
-    return await create_application_endpoint(request, "inside-our-ai", brain)
-
+async def inside_ai(r: Dict[str, Any], b: CortexFlow = Depends(get_brain)): return await generic_app_endpoint("inside-our-ai", r, b)
 
 @app.post("/api/compliance")
-async def compliance_endpoint(
-    request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)
-):
-    """Compliance specific endpoint"""
-    return await create_application_endpoint(request, "compliance", brain)
-
+async def compliance(r: Dict[str, Any], b: CortexFlow = Depends(get_brain)): return await generic_app_endpoint("compliance", r, b)
 
 @app.post("/api/exterior-spaces")
-async def exterior_spaces_endpoint(
-    request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)
-):
-    """Exterior spaces specific endpoint"""
-    return await create_application_endpoint(request, "exterior-spaces", brain)
+async def exterior(r: Dict[str, Any], b: CortexFlow = Depends(get_brain)): return await generic_app_endpoint("exterior-spaces", r, b)
 
 
-# Health check endpoint
 @app.get("/health")
 async def health_check():
-    """Basic health check"""
     return {
         "status": "healthy",
-        "service": "ThinkLife Backend with Brain and Zoe",
         "timestamp": datetime.now().isoformat(),
-        "brain_available": brain_instance is not None,
-        "zoe_available": zoe_service_instance is not None,
+        "brain": brain_instance is not None,
+        "zoe": zoe_service_instance is not None
     }
 
-
-# Root endpoint
 @app.get("/")
 async def root():
-    """Root endpoint"""
-    return {
-        "message": "ThinkLife Backend with Brain and Zoe Integration",
-        "version": "1.0.0",
-        "brain_enabled": brain_instance is not None,
-        "zoe_enabled": zoe_service_instance is not None,
-        "endpoints": {
-            "brain": "/api/brain",
-            "brain_health": "/api/brain/health",
-            "brain_analytics": "/api/brain/analytics",
-            "zoe": {
-                "chat": "/api/zoe/chat",
-                "health": "/api/zoe/health",
-                "sessions": "/api/zoe/sessions/{user_id}",
-                "session_history": "/api/zoe/sessions/{session_id}/history",
-            },
-            "applications": {
-                "healing_rooms": "/api/healing-rooms",
-                "inside_our_ai": "/api/inside-our-ai",
-                "compliance": "/api/compliance",
-                "exterior_spaces": "/api/exterior-spaces",
-                "chatbot": "/api/chat",  # Legacy endpoint, routes to Zoe
-            },
-        },
-    }
-
+    return {"message": "ThinkLife Backend", "version": "0.7.0"}
 
 if __name__ == "__main__":
     import uvicorn
-
-    # Run the server
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="info")
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

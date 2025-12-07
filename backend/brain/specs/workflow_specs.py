@@ -70,6 +70,9 @@ class ProcessingSpec:
     execution_strategy: str = "direct"  # direct | reasoned | adaptive
     reasoning_threshold: float = 0.7  # Minimum confidence to use reasoning suggestions
     
+    # Evaluation and Observability
+    eval: bool = False  # Enable evaluation when True
+    
     custom_processing: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -83,6 +86,7 @@ class ProcessingSpec:
             "stream_response": self.stream_response,
             "execution_strategy": self.execution_strategy,
             "reasoning_threshold": self.reasoning_threshold,
+            "eval": self.eval,
             **self.custom_processing
         }
 

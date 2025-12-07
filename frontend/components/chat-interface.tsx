@@ -396,7 +396,8 @@ I'm here to listen and support you. What's on your mind today?`;
         return;
       }
 
-      if (data.success && data.response) {
+      // Handle response - display it even if success is false (fallback responses)
+      if (data.response) {
         // Capture session ID from response for conversation continuity
         if (data.session_id) {
           if (!sessionId) {
@@ -428,12 +429,21 @@ I'm here to listen and support you. What's on your mind today?`;
           console.log("Conversation stats:", data.conversation_stats);
         }
         
+        // Log warning if success is false (fallback or error response)
+        if (!data.success) {
+          console.warn("Backend returned success=false but provided response:", data.error || "Unknown error");
+        }
+        
         // Play audio if avatar mode is enabled and audio data is provided
         if (avatarMode && data.audio_data) {
           setTimeout(() => speakMessage(data.audio_data), 800);
         }
-      } else {
+      } else if (!data.success) {
+        // No response and success is false - throw error
         throw new Error(data.error || "No response from AI");
+      } else {
+        // No response but success is true - unexpected case
+        throw new Error("Received success response but no message content");
       }
     } catch (error) {
       console.error("Chat error:", error);

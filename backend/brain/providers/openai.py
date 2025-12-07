@@ -6,11 +6,10 @@ import logging
 import os
 from typing import Dict, Any, List, Optional, Union
 
-logger = logging.getLogger(__name__)
-
-
 from ..specs import ProviderSpec
 from .provider_registry import get_provider_registry
+
+logger = logging.getLogger(__name__)
 
 try:
     from openai import AsyncOpenAI
@@ -31,21 +30,17 @@ class OpenAIProvider:
         self.client = None
     
     async def initialize(self) -> bool:
-        """Validate config and initialize OpenAI client"""
         if not OPENAI_AVAILABLE:
             logger.error("OpenAI library not available")
             return False
         
-        # Validate with registry
         if not self._validate_config():
             return False
         
-        # Initialize client
         try:
-            # Get API key from config or environment
             api_key = self.config.get("api_key") or os.getenv("OPENAI_API_KEY")
             if not api_key:
-                logger.error("OpenAI API key not found in config or OPENAI_API_KEY environment variable")
+                logger.error("OpenAI API key missing")
                 return False
             
             self.client = AsyncOpenAI(
@@ -59,11 +54,10 @@ class OpenAIProvider:
             logger.info(f"OpenAI initialized: {self.config.get('model')}")
             return True
         except Exception as e:
-            logger.error(f"OpenAI initialization failed: {e}")
+            logger.exception(f"OpenAI initialization failed: {e}")
             return False
     
     def _validate_config(self) -> bool:
-        """Validate configuration using provider registry"""
         registry = get_provider_registry()
         provider_type = "openai"
         model = self.config.get("model")
@@ -74,26 +68,20 @@ class OpenAIProvider:
             return False
         return True
     
-    async def generate_response(
-        self, 
-        messages: List[Dict[str, str]], 
-        **kwargs: Any) -> Dict[str, Any]:
-        """Generate response from OpenAI with LangFuse tracing"""
+    async def generate_response(self, messages: List[Dict[str, str]], **kwargs: Any) -> Dict[str, Any]:
         if not self._initialized:
             raise RuntimeError("Provider not initialized")
         
         try:
             params = self._build_request_params(kwargs)
-            # Ensure messages and model are in params (required by OpenAI API)
             params["messages"] = messages
-            model = params.get("model")
-            if not model:
+            
+            # Ensure model
+            if not params.get("model"):
                 model = self.config.get("model")
-                if not model:
-                    raise ValueError("Model not specified in config or kwargs")
+                if not model: raise ValueError("Model missing")
                 params["model"] = model
             
-            # Make OpenAI API call
             response = await self.client.chat.completions.create(**params)
             
             if not response.choices:
@@ -109,23 +97,18 @@ class OpenAIProvider:
                 "provider": "openai"
             }
             
-            # Add tool/function calls if present
             if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
                 metadata["tool_calls"] = [call.dict() for call in choice.message.tool_calls]
             elif hasattr(choice.message, 'function_call') and choice.message.function_call:
                 metadata["function_call"] = choice.message.function_call
             
-            return {
-                "content": content,
-                "metadata": metadata,
-                "success": True
-            }
+            return {"content": content, "metadata": metadata, "success": True}
+            
         except Exception as e:
-            logger.error(f"OpenAI request failed: {e}")
+            logger.exception("OpenAI request failed")
             return self._error_response(str(e))
     
     def _build_request_params(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """Build request parameters from config and kwargs"""
         params = {
             "model": kwargs.get("model", self.config.get("model")),
             "max_tokens": kwargs.get("max_tokens", self.config.get("max_tokens")),
@@ -136,41 +119,20 @@ class OpenAIProvider:
             "stream": kwargs.get("stream", self.config.get("stream", False)),
         }
         
-        # Add optional params
-        optional = ["stop", "user", "logit_bias", "functions", "function_call", 
-                   "tools", "tool_choice", "response_format", "seed"]
+        optional = ["stop", "user", "logit_bias", "functions", "function_call", "tools", "tool_choice", "response_format", "seed"]
         for key in optional:
-            if key in kwargs:
-                params[key] = kwargs[key]
-            elif key in self.config:
-                params[key] = self.config[key]
+            if key in kwargs: params[key] = kwargs[key]
+            elif key in self.config: params[key] = self.config[key]
         
-        # Remove None values
         return {k: v for k, v in params.items() if v is not None}
     
     def _error_response(self, error: str) -> Dict[str, Any]:
-        """Create standardized error response"""
-        return {
-            "content": "",
-            "metadata": {"error": error, "provider": "openai"},
-            "success": False
-        }
+        return {"content": "", "metadata": {"error": error, "provider": "openai"}, "success": False}
     
-    async def generate_embeddings(
-        self, 
-        input_text: Union[str, List[str]], 
-        model: str = "text-embedding-ada-002",
-        **kwargs: Any) -> Dict[str, Any]:
-        """Generate embeddings"""
-        if not self._initialized:
-            raise RuntimeError("Provider not initialized")
-        
+    async def generate_embeddings(self, input_text: Union[str, List[str]], model: str = "text-embedding-ada-002", **kwargs: Any) -> Dict[str, Any]:
+        if not self._initialized: raise RuntimeError("Provider not initialized")
         try:
-            response = await self.client.embeddings.create(
-                model=model,
-                input=input_text,
-                **kwargs
-            )
+            response = await self.client.embeddings.create(model=model, input=input_text, **kwargs)
             return {
                 "embeddings": [data.embedding for data in response.data],
                 "usage": response.usage.dict() if response.usage else {},
@@ -178,46 +140,27 @@ class OpenAIProvider:
                 "success": True
             }
         except Exception as e:
-            logger.error(f"Embeddings failed: {e}")
+            logger.exception("Embeddings failed")
             return {"embeddings": [], "error": str(e), "success": False}
     
-    async def generate_image(
-        self,
-        prompt: str,
-        model: str = "dall-e-3",
-        size: str = "1024x1024",
-        quality: str = "standard",
-        **kwargs: Any) -> Dict[str, Any]:
-        """Generate image with DALL-E"""
-        if not self._initialized:
-            raise RuntimeError("Provider not initialized")
-        
+    async def generate_image(self, prompt: str, model: str = "dall-e-3", size: str = "1024x1024", quality: str = "standard", **kwargs: Any) -> Dict[str, Any]:
+        if not self._initialized: raise RuntimeError("Provider not initialized")
         try:
-            response = await self.client.images.generate(
-                model=model,
-                prompt=prompt,
-                size=size,
-                quality=quality,
-                **kwargs
-            )
+            response = await self.client.images.generate(model=model, prompt=prompt, size=size, quality=quality, **kwargs)
             return {
                 "images": [image.url for image in response.data],
-                "metadata": {"model": response.model, "provider": "openai"},
+                "metadata": {"model": model, "provider": "openai"},
                 "success": True
             }
         except Exception as e:
-            logger.error(f"Image generation failed: {e}")
+            logger.exception("Image generation failed")
             return {"images": [], "error": str(e), "success": False}
     
     async def health_check(self) -> Dict[str, Any]:
-        """Check provider health"""
         try:
             import time
             start = time.time()
-            response = await self.generate_response(
-                [{"role": "user", "content": "Test"}], 
-                max_tokens=1
-            )
+            response = await self.generate_response([{"role": "user", "content": "Test"}], max_tokens=1)
             return {
                 "healthy": response.get("success", False),
                 "response_time": time.time() - start,
@@ -228,12 +171,10 @@ class OpenAIProvider:
             return {"healthy": False, "error": str(e), "provider": self.name}
     
     async def close(self) -> None:
-        """Close provider"""
         self._initialized = False
         self.client = None
         logger.info("OpenAI provider closed")
     
     
 def create_openai_provider(config: Optional[Dict[str, Any]] = None) -> OpenAIProvider:
-    """Create OpenAI provider instance"""
     return OpenAIProvider(config or {})

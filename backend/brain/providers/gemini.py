@@ -69,7 +69,7 @@ class GeminiProvider:
         self, 
         messages: List[Dict[str, str]], 
         **kwargs: Any) -> Dict[str, Any]:
-        """Generate response from Gemini with LangFuse tracing"""
+        """Generate response from Gemini"""
         if not self._initialized:
             raise RuntimeError("Provider not initialized")
         

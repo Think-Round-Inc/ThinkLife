@@ -19,25 +19,9 @@ Usage:
 """
 
 import logging
+import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
-
-# LangFuse tracing
-try:
-    from langfuse.decorators import observe, langfuse_context
-    LANGFUSE_AVAILABLE = True
-except (ImportError, Exception) as e:
-    LANGFUSE_AVAILABLE = False
-    def observe(name=None, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    class LangfuseContext:
-        def update_current_trace(self, **kwargs):
-            pass
-        def update_current_observation(self, **kwargs):
-            pass
-    langfuse_context = LangfuseContext()
 
 logger = logging.getLogger(__name__)
 
@@ -111,9 +95,21 @@ class ZoeService:
             await self.initialize()
         
         try:
-            # Use session_id from user_context if not provided directly
-            if not session_id and user_context:
+            # Ensure user_context is a dict
+            if user_context is None:
+                user_context = {}
+
+            # Resolve session_id
+            if not session_id:
                 session_id = user_context.get("session_id")
+            
+            # Generate session_id if still missing (for conversation tracking)
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                logger.info(f"Generated new conversation session_id: {session_id}")
+            
+            # Ensure session_id is in user_context for consistency
+            user_context["session_id"] = session_id
             
             # 1. Create BrainRequest using ZoeCore helper
             request_data = self.zoe_core.create_brain_request(
@@ -217,7 +213,7 @@ class ZoeService:
                 }
         
         except Exception as e:
-            logger.error(f"Error in ZoeService.process_message: {e}")
+            logger.exception("Error in ZoeService.process_message")
             
             error_response = self.zoe_core.get_error_response() if self.zoe_core else "I'm experiencing technical difficulties."
             
@@ -279,4 +275,3 @@ def get_zoe_service() -> ZoeService:
     if _zoe_service_instance is None:
         _zoe_service_instance = ZoeService()
     return _zoe_service_instance
-
