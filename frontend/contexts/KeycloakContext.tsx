@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { keycloak, initKeycloak, login, logout, register, getToken, getUserInfo, isAuthenticated, hasRole, hasAnyRole } from '../lib/keycloak-client';
+import { keycloak, initKeycloak, login, logout, register, getToken, getUserInfo, isAuthenticated, hasRole, hasAnyRole } from '../lib/keycloak';
 
 interface KeycloakContextType {
   keycloak: typeof keycloak;
