@@ -20,7 +20,7 @@ We aim to provide security fixes for all supported branches.  Please report any 
 If you discover a security issue, please use **one** of the methods below:
 
 ### 1. GitHub Security Advisory (recommended)
-1. Go to the **Security → Advisories** tab of the Think-Round-Inc/ThinkxLife repository.
+1. Go to the **Security → Advisories** tab of the Think-Round-Inc/ThinkLife repository.
 2. Click **“New draft”** to open a private advisory.
 3. Provide as much detail as possible (steps to reproduce, impact, suggested fix).
 
