@@ -25,7 +25,7 @@ Experience trauma-informed AI support through our empathetic companion Zoe, desi
 ### **Exterior Spaces**
 Discover space that preserve human creativity while leveraging technology for accessibility and connection.
 
-**We believe in AI transparency** — showing, not just telling, how technology can serve humanity with purpose and heart.
+**We believe in AI transparency**: showing, not just telling, how technology can serve humanity with purpose and heart.
 
 ---
 
@@ -129,7 +129,7 @@ We openly share our learnings, challenges, and improvements in integrating AI re
 
 ## **Contributing to Responsible AI**
 
-ThinkLife is more than a demonstration — it's a **living example** of how nonprofits can leverage AI ethically and effectively. We welcome:
+ThinkLife is more than a demonstration: it's a **living example** of how nonprofits can leverage AI ethically and effectively. We welcome:
 
 - **Feedback** on our AI implementation approaches
 - **Contributions** to improve accessibility and inclusivity
