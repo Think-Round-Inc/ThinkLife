@@ -74,7 +74,7 @@ def initialize_langfuse_client() -> bool:
     try:
         public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
         secret_key = os.getenv("LANGFUSE_SECRET_KEY")
-        host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+        host = os.getenv("LANGFUSE_HOST", "https://us.cloud.langfuse.com")
         
         if not public_key or not secret_key:
             logger.warning("Langfuse credentials not found.")
@@ -87,15 +87,15 @@ def initialize_langfuse_client() -> bool:
         )
         
         if _langfuse_client.auth_check():
-            logger.info(f"✓ Langfuse client authenticated (host: {host})")
+            logger.info(f"Langfuse client authenticated (host: {host})")
             return True
         else:
-            logger.error("✗ Langfuse authentication failed")
+            logger.error("Langfuse authentication failed")
             _langfuse_client = None
             return False
             
     except Exception as e:
-        logger.error(f"✗ Langfuse client initialization failed: {e}")
+        logger.error(f"Langfuse client initialization failed: {e}")
         _langfuse_client = None
         return False
 
