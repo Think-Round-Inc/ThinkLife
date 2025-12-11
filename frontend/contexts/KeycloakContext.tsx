@@ -52,26 +52,27 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
         }
 
         // Listen for token updates only if keycloak is available
-        if (keycloak) {
-          keycloak.onTokenExpired = () => {
-            keycloak?.updateToken(30).catch((error) => {
+        const keycloakInstance = keycloak;
+        if (keycloakInstance) {
+          keycloakInstance.onTokenExpired = () => {
+            keycloakInstance.updateToken(30).catch((error) => {
               console.warn('Failed to refresh token:', error);
               setAuthenticated(false);
               setUser(null);
             });
           };
 
-          keycloak.onAuthSuccess = () => {
+          keycloakInstance.onAuthSuccess = () => {
             setAuthenticated(true);
             setUser(getUserInfo());
           };
 
-          keycloak.onAuthError = () => {
+          keycloakInstance.onAuthError = () => {
             setAuthenticated(false);
             setUser(null);
           };
 
-          keycloak.onAuthLogout = () => {
+          keycloakInstance.onAuthLogout = () => {
             setAuthenticated(false);
             setUser(null);
           };
