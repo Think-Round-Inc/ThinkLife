@@ -32,7 +32,7 @@ const createKeycloakInstance = (): Keycloak | null => {
 createKeycloakInstance();
 
 // Export the instance (will be null on server side)
-export const keycloak = keycloakInstance;
+export const keycloak: Keycloak | null = keycloakInstance;
 
 // Keycloak initialization options
 export const keycloakInitOptions = {
