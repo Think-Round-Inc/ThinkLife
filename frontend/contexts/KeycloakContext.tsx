@@ -1,10 +1,11 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import type Keycloak from 'keycloak-js';
 import { keycloak, initKeycloak, login, logout, register, getToken, getUserInfo, isAuthenticated, hasRole, hasAnyRole } from '../lib/keycloak';
 
 interface KeycloakContextType {
-  keycloak: typeof keycloak;
+  keycloak: Keycloak | null;
   authenticated: boolean;
   loading: boolean;
   user: ReturnType<typeof getUserInfo>;
@@ -52,7 +53,7 @@ export const KeycloakProvider: React.FC<KeycloakProviderProps> = ({ children }) 
         }
 
         // Listen for token updates only if keycloak is available
-        const keycloakInstance = keycloak;
+        const keycloakInstance = keycloak as Keycloak | null;
         if (keycloakInstance) {
           keycloakInstance.onTokenExpired = () => {
             keycloakInstance.updateToken(30).catch((error) => {

@@ -191,6 +191,16 @@ class CortexFlow:
             if strategy in ["reasoned", "adaptive"]:
                 logger.info(f"Creating execution plan using strategy: {strategy}")
                 plan = await self.create_execution_plan(agent_specs, request)
+                
+                # Validate reasoning output before execution
+                validation = self._validate_reasoning_output(plan, request)
+                if not validation["valid"]:
+                    logger.error(f"Reasoning validation failed: {validation['issues']}")
+                    return self._create_error_response(
+                        f"Reasoning validation failed: {'; '.join(validation['issues'])}",
+                        start_time
+                    )
+                
                 result = await self.execute_plan(plan, request)
             else:
                 logger.info("Executing directly (no reasoning)")
@@ -359,6 +369,76 @@ class CortexFlow:
         except Exception as e:
             logger.warning(f"Estimation failed: {e}")
             return {"cost": 0.0, "latency": 1.0}
+    
+    def _validate_reasoning_output(self, plan: ExecutionPlan, request: BrainRequest) -> Dict[str, Any]:
+        """
+        Validate reasoning engine output before workflow execution
+        
+        Checks:
+        1. Plan has valid specs
+        2. Provider is specified and valid
+        3. Reasoning confidence is reasonable
+        4. Optimized specs are different from original (if reasoning was applied)
+        """
+        issues = []
+        
+        try:
+            # Check if plan exists
+            if not plan:
+                return {"valid": False, "issues": ["No execution plan generated"]}
+            
+            # Check if optimized specs exist
+            if not plan.optimized_specs:
+                issues.append("No optimized specs in plan")
+            
+            # Check provider
+            if plan.optimized_specs and not plan.optimized_specs.provider:
+                issues.append("No provider specified in optimized specs")
+            
+            # Check reasoning confidence if reasoning was applied
+            if plan.reasoning_applied:
+                if plan.confidence < 0.3:
+                    issues.append(f"Reasoning confidence too low: {plan.confidence}")
+                    logger.warning(f"Low reasoning confidence: {plan.confidence}")
+                
+                # Verify reasoning made meaningful changes
+                if plan.optimized_specs and plan.original_specs:
+                    original_dict = plan.original_specs.to_dict() if hasattr(plan.original_specs, 'to_dict') else {}
+                    optimized_dict = plan.optimized_specs.to_dict() if hasattr(plan.optimized_specs, 'to_dict') else {}
+                    
+                    # Check if specs are identical (reasoning didn't do anything)
+                    if original_dict == optimized_dict:
+                        logger.info("Reasoning applied but specs unchanged - this may be intentional")
+                        # Not necessarily an issue, reasoning might have validated the original specs
+            
+            # Check if estimated cost/latency are reasonable
+            if plan.estimated_cost and plan.estimated_cost < 0:
+                issues.append(f"Invalid estimated cost: {plan.estimated_cost}")
+            
+            if plan.estimated_latency and plan.estimated_latency < 0:
+                issues.append(f"Invalid estimated latency: {plan.estimated_latency}")
+            
+            # Validate specs have necessary components
+            if plan.optimized_specs:
+                specs = plan.optimized_specs
+                
+                # Check provider details
+                if specs.provider:
+                    if not specs.provider.provider_type:
+                        issues.append("Provider type not specified")
+                    if not specs.provider.model:
+                        issues.append("Provider model not specified")
+            
+            if issues:
+                logger.warning(f"Reasoning validation found {len(issues)} issue(s): {', '.join(issues)}")
+                return {"valid": False, "issues": issues}
+            
+            logger.info("Reasoning output validated successfully")
+            return {"valid": True, "issues": []}
+            
+        except Exception as e:
+            logger.error(f"Reasoning validation error: {e}")
+            return {"valid": False, "issues": [f"Validation error: {str(e)}"]}
     
     @observe(name="cortex_execute_plan")
     async def execute_plan(
