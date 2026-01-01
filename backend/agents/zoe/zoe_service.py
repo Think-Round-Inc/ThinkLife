@@ -178,12 +178,58 @@ class ZoeService:
             logger.info(f"Processing message through plugin for session: {request_data['session_id']}")
             agent_response = await self.zoe_agent.process_request(brain_request)
             
-            # 6. Format response for frontend
+            # 6. Handle confidence-based response
+            # Extract confidence score from metadata
+            confidence = agent_response.metadata.get("confidence_score", 0.0)
+            
+            # Check if response is low confidence (< 0.75)
+            if confidence < 0.75:
+                logger.info(f"Low confidence response ({confidence:.2f}), using Zoe's fallback")
+                
+                # Use Zoe's empathetic fallback for low confidence
+                zoe_fallback = self._get_low_confidence_response(message, confidence)
+                
+                # Add to conversation history
+                self.zoe_core.conversation_manager.add_message(
+                    session_id=agent_response.session_id,
+                    role="assistant",
+                    content=zoe_fallback,
+                    metadata={
+                        "low_confidence": True,
+                        "original_confidence": confidence,
+                        "original_response": agent_response.content
+                    }
+                )
+                
+                return {
+                    "success": True,
+                    "response": zoe_fallback,
+                    "session_id": agent_response.session_id,
+                    "confidence": confidence,
+                    "metadata": {
+                        **agent_response.metadata,
+                        "low_confidence": True,
+                        "processing_time": agent_response.processing_time,
+                        "agent": "zoe"
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # 7. Format response for frontend (high confidence)
             if agent_response.success:
+                # Add to conversation history
+                self.zoe_core.conversation_manager.add_message(
+                    session_id=agent_response.session_id,
+                    role="assistant",
+                    content=agent_response.content,
+                    metadata={"confidence": confidence}
+                )
+                
                 return {
                     "success": True,
                     "response": agent_response.content,
                     "session_id": agent_response.session_id,
+                    "confidence": confidence,
                     "metadata": {
                         **agent_response.metadata,
                         "processing_time": agent_response.processing_time,
@@ -224,6 +270,45 @@ class ZoeService:
                 "metadata": {"agent": "zoe", "error": True},
                 "timestamp": datetime.now().isoformat()
             }
+    
+    def _get_low_confidence_response(self, message: str, confidence: float) -> str:
+        """
+        Generate empathetic fallback response for low confidence situations
+        
+        Args:
+            message: The user's original message
+            confidence: The confidence score (0.0-1.0)
+        
+        Returns:
+            Empathetic fallback response
+        """
+        # Check message content for better context-aware responses
+        message_lower = message.lower()
+        
+        # For emotional/support requests
+        if any(word in message_lower for word in ["anxious", "scared", "worried", "stressed", "upset", "sad", "hurt", "pain"]):
+            return ("I hear that you're going through something difficult right now. While I'm not entirely certain "
+                   "I can give you the best specific advice on this, I want you to know that your feelings are valid. "
+                   "Would you like to talk more about what you're experiencing, or would you prefer me to suggest some "
+                   "general coping strategies?")
+        
+        # For questions requiring specific knowledge
+        if any(word in message_lower for word in ["how", "what", "when", "where", "why", "explain"]):
+            return ("I'm not completely confident I have the right information to answer that question accurately. "
+                   "Rather than give you potentially incorrect information, I think it would be better if you could "
+                   "rephrase your question or provide more context. I'm here to help, and I want to make sure "
+                   "I give you reliable guidance.")
+        
+        # For complex or unclear messages
+        if len(message.split()) > 50:
+            return ("I want to make sure I understand you correctly before responding. Your message covers quite a bit, "
+                   "and I'd like to give you a thoughtful answer. Could you help me by sharing what's most important "
+                   "to you right now, or what you'd most like support with?")
+        
+        # Generic empathetic fallback
+        return ("I'm here to support you, but I'm not entirely confident I fully understand what you need right now. "
+               "Could you tell me a bit more about what's on your mind, or help me understand better how I can help? "
+               "Your wellbeing matters, and I want to make sure I give you the support you deserve.")
     
     def get_conversation_history(self, session_id: str, limit: Optional[int] = None) -> list:
         """Get conversation history for a session"""

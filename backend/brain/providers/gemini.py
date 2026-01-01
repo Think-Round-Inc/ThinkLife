@@ -12,14 +12,14 @@ from ..specs import ProviderSpec
 from .provider_registry import get_provider_registry
 
 try:
-    import google.generativeai as genai
-    from google.generativeai import GenerativeModel
+    from google import genai
+    from google.genai.types import GenerateContentConfig
     GEMINI_AVAILABLE = True
 except ImportError:
-    logger.warning("Google Generative AI library not available. Install with: pip install google-generativeai")
+    logger.warning("Google Genai library not available. Install with: pip install google-genai")
     GEMINI_AVAILABLE = False
     genai = None
-    GenerativeModel = None
+    GenerateContentConfig = None
 
 
 class GeminiProvider:
@@ -29,7 +29,7 @@ class GeminiProvider:
         self.config = config or {}
         self.name = "gemini"
         self._initialized = False
-        self.model = None
+        self.client = None
     
     async def initialize(self) -> bool:
         """Validate config and initialize Gemini client"""
@@ -43,9 +43,9 @@ class GeminiProvider:
         
         # Initialize client
         try:
-            genai.configure(api_key=self.config["api_key"])
+            api_key = self.config.get("api_key")
+            self.client = genai.Client(api_key=api_key)
             model_name = self.config.get("model", "gemini-1.5-flash")
-            self.model = GenerativeModel(model_name)
             self._initialized = True
             logger.info(f"Gemini initialized: {model_name}")
             return True
@@ -89,8 +89,11 @@ class GeminiProvider:
             
             # Make Gemini API call
             try:
-                chat = self.model.start_chat(history=[])
-                response = await chat.send_message_async(user_message, generation_config=gen_config)
+                response = await self.client.aio.models.generate_content(
+                    model=model,
+                    contents=user_message,
+                    config=GenerateContentConfig(**gen_config)
+                )
                 content = response.text if hasattr(response, 'text') else ""
             except Exception as api_error:
                 logger.error(f"Gemini API call failed: {api_error}")
@@ -154,7 +157,7 @@ class GeminiProvider:
     async def close(self) -> None:
         """Close provider"""
         self._initialized = False
-        self.model = None
+        self.client = None
         logger.info("Gemini provider closed")
 
 

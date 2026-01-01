@@ -63,10 +63,21 @@ graph TD
 *   **Responsibilities:**
     *   Takes the final `ExecutionPlan`.
     *   Executes the plan using a state machine (LangGraph-based).
-    *   Handles the loop of: Initialize -> Context -> Tools -> LLM -> Response.
+    *   Handles the loop of: Initialize -> Context -> Tools -> LLM -> Validation -> Response.
+    *   Validates responses with confidence scoring (0.0-1.0 scale).
+    *   Implements retry mechanism for low confidence responses (threshold: 0.75).
     *   Manages provider interactions (OpenAI, etc.).
 
-### 5. Evaluation & Observability
+### 5. Validation & Confidence Scoring
+*   **Role:** Quality assurance and response validation.
+*   **Responsibilities:**
+    *   **Confidence Scoring:** Calculates confidence score (0.0-1.0) for every response.
+    *   **Validation Loop:** Automatically retries responses below threshold (0.75).
+    *   **Reasoning Validation:** Validates reasoning engine output before workflow execution.
+    *   **Feedback Integration:** Incorporates validation feedback into retry attempts.
+    *   **Threshold Decision:** Accepts high confidence, retries moderate, uses fallback after max attempts.
+
+### 6. Evaluation & Observability
 *   **Role:** The monitor.
 *   **Responsibilities:**
     *   **Langfuse Integration:** Traces every step of the execution for debugging and analytics.
@@ -82,10 +93,18 @@ graph TD
     *   Checks guardrails (Auth, Rate Limit).
     *   Estimates cost/latency.
     *   (Optional) `ReasoningEngine` optimizes the plan.
+    *   Validates reasoning output (if reasoning was used).
 4.  **Execution:** `WorkflowEngine` runs the plan.
     *   Queries Vector DB (if needed).
     *   Calls OpenAI.
-5.  **Response:** Result returns to `ZoeAgent` -> `ZoeService` -> Frontend.
+    *   Validates response quality with confidence scoring.
+    *   Retries if confidence < 0.75 (max 5 attempts).
+    *   Replaces with fallback if still low confidence after max attempts.
+5.  **Response:** Result returns with confidence score to `ZoeAgent`.
+6.  **Agent Decision:** `ZoeAgent` checks confidence.
+    *   If confidence >= 0.75: Returns response to `ZoeService`.
+    *   If confidence < 0.75: Uses context-aware fallback response.
+7.  **Frontend:** Final response delivered to user.
 
 ## Directory Structure
 

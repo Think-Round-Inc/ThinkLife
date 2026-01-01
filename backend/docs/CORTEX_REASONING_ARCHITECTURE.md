@@ -60,10 +60,35 @@ The Reasoning Engine is called *only* during the Planning Phase. It does not exe
 plan = await self.reasoning_engine.optimize_execution_specs(...)
 ```
 
+### Reasoning Validation
+
+Before workflow execution, Cortex validates the reasoning engine output to ensure quality:
+
+**Validation Checks:**
+1. Plan exists with valid specs
+2. Provider is specified (type and model)
+3. Reasoning confidence >= 0.3 (minimum threshold)
+4. Optimized specs differ from original (if reasoning was applied)
+5. Cost and latency estimates are non-negative
+
+**Validation Behavior:**
+- If valid: Proceeds to workflow execution
+- If invalid: Returns error response immediately, prevents execution
+- Logs validation failures at ERROR level
+
+**Example:**
+```python
+# cortex.py - After creating execution plan
+validation = self._validate_reasoning_output(plan, request)
+if not validation["valid"]:
+    return error_response(validation["issues"])
+```
+
 ### Observability
 
 *   **Reasoning Steps:** All internal "thoughts" (LLM calls for reasoning) are traced in Langfuse.
 *   **Confidence Scores:** Returned metrics help tune the system (e.g., "I'm 90% sure we need search").
+*   **Validation Results:** Reasoning validation outcomes are logged for monitoring.
 
 ---
 
@@ -77,12 +102,18 @@ User Request
 (Check Guardrails)
     ↓
 (Strategy Check) --[Direct]--> [ExecutionPlan]
-        |
-    [Reasoned/Adaptive]
+        |                            ↓
+    [Reasoned/Adaptive]         [Workflow Engine]
         ↓
     [Reasoning Engine] --(LLM Call to Plan)--> [Optimized Specs]
         ↓
     [ExecutionPlan]
         ↓
-[Workflow Engine] --> Executes Plan
+    [Validate Reasoning Output] --[Invalid]--> Error Response
+        ↓ [Valid]
+    [Workflow Engine]
+        ↓
+    [Validate Response + Confidence Scoring]
+        ↓
+    [Response to Agent]
 ```

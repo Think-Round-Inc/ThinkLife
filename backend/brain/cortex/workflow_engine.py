@@ -47,6 +47,13 @@ class WorkflowState(TypedDict):
     status: str
     start_time: float
     end_time: Optional[float]
+    
+    # Validation tracking
+    validation_attempts: int
+    max_validation_runs: int
+    validation_feedback: Optional[str]
+    is_validated: bool
+    confidence_score: float
 
 
 class WorkflowEngine:
@@ -74,6 +81,7 @@ class WorkflowEngine:
             workflow.add_node("execute_tools", self._execute_tools_node)
             workflow.add_node("build_messages", self._build_messages_node)
             workflow.add_node("call_provider", self._call_provider_node)
+            workflow.add_node("validate_response", self._validate_response_node)
             workflow.add_node("finalize", self._finalize_node)
             
             # Set entry point
@@ -101,7 +109,18 @@ class WorkflowEngine:
             
             workflow.add_edge("execute_tools", "build_messages")
             workflow.add_edge("build_messages", "call_provider")
-            workflow.add_edge("call_provider", "finalize")
+            workflow.add_edge("call_provider", "validate_response")
+            
+            # Validation loop: retry if validation fails, else finalize
+            workflow.add_conditional_edges(
+                "validate_response",
+                self._route_after_validation,
+                {
+                    "retry": "build_messages",  # Loop back to rebuild messages with feedback
+                    "finalize": "finalize"
+                }
+            )
+            
             workflow.add_edge("finalize", END)
             
             self.graph = workflow.compile()
@@ -138,7 +157,12 @@ class WorkflowEngine:
                 "execution_steps": [],
                 "status": "running",
                 "start_time": start_time,
-                "end_time": None
+                "end_time": None,
+                "validation_attempts": 0,
+                "max_validation_runs": 5,
+                "validation_feedback": None,
+                "is_validated": False,
+                "confidence_score": 0.0
             }
             
             if self.graph:
@@ -171,10 +195,13 @@ class WorkflowEngine:
                 "content": final_content or "",
                 "execution_id": execution_id,
                 "status": final_state["status"],
+                "confidence": final_state.get("confidence_score", 0.0),
                 "metadata": {
                     "execution_steps": final_state["execution_steps"],
                     "errors": final_state["errors"],
-                    "duration_seconds": (final_state["end_time"] or time.time()) - final_state["start_time"]
+                    "duration_seconds": (final_state["end_time"] or time.time()) - final_state["start_time"],
+                    "confidence_score": final_state.get("confidence_score", 0.0),
+                    "validation_attempts": final_state.get("validation_attempts", 0)
                 }
             }
             
@@ -201,7 +228,7 @@ class WorkflowEngine:
     
     @observe(name="workflow_execute_sequential")
     async def _execute_sequential(self, state: WorkflowState) -> WorkflowState:
-        """Fallback sequential execution"""
+        """Fallback sequential execution with validation loop"""
         try:
             state = await self._initialize_node(state)
             
@@ -211,8 +238,18 @@ class WorkflowEngine:
             if state["specs"].tools:
                 state = await self._execute_tools_node(state)
             
-            state = await self._build_messages_node(state)
-            state = await self._call_provider_node(state)
+            # Agentic loop: retry until validated or max attempts reached
+            while True:
+                state = await self._build_messages_node(state)
+                state = await self._call_provider_node(state)
+                state = await self._validate_response_node(state)
+                
+                # Check if we should continue or break
+                route = self._route_after_validation(state)
+                if route == "finalize":
+                    break
+                # else route == "retry", continue loop
+            
             state = await self._finalize_node(state)
             
         except Exception as e:
@@ -329,6 +366,9 @@ class WorkflowEngine:
             specs = state["specs"]
             messages = []
             
+            # Check if this is a retry with validation feedback
+            is_retry = state.get("validation_attempts", 0) > 0 and state.get("validation_feedback")
+            
             # User Context
             user_info = self._extract_user_info_for_llm(request.user_context)
             
@@ -369,6 +409,20 @@ class WorkflowEngine:
                 
                 tool_ctx = self._format_tool_context(state)
                 if tool_ctx: sys_parts.append(f"Tool results:\n{tool_ctx}")
+                
+                # Add validation feedback for retry attempts
+                if is_retry:
+                    prev_response = state.get("final_content", "")
+                    feedback = state.get("validation_feedback", "")
+                    retry_guidance = f"""IMPORTANT - Response Improvement Required:
+Your previous response was not satisfactory. 
+
+Previous response: {prev_response[:500]}{'...' if len(prev_response) > 500 else ''}
+
+Feedback: {feedback}
+
+Please generate a better, more helpful, and complete response that addresses the user's question properly."""
+                    sys_parts.append(retry_guidance)
                 
                 if sys_parts:
                     messages.append({"role": "system", "content": "\n\n".join(sys_parts)})
@@ -466,12 +520,202 @@ class WorkflowEngine:
         
         return state
     
+    @observe(name="workflow_node_validate_response")
+    async def _validate_response_node(self, state: WorkflowState) -> WorkflowState:
+        """Validate the LLM response for quality and sensibility with confidence scoring"""
+        state["execution_steps"].append("validate_response")
+        state["validation_attempts"] += 1
+        
+        try:
+            # Get response content
+            response_content = state.get("final_content", "")
+            if not response_content or response_content.startswith("Error:"):
+                state["validation_feedback"] = "Response generation failed or returned error"
+                state["confidence_score"] = 0.0
+                return state
+            
+            # Validate response quality and get confidence score
+            validation_result = await self._validate_response_quality(
+                response=response_content,
+                user_message=state["request"].message,
+                state=state
+            )
+            
+            # Update confidence score
+            confidence = validation_result.get("confidence", 0.0)
+            state["confidence_score"] = confidence
+            
+            # Threshold check: >= 0.75 is acceptable
+            if confidence >= 0.75:
+                state["is_validated"] = True
+                logger.info(f"Response validated successfully (attempt {state['validation_attempts']}, confidence: {confidence:.2f})")
+            else:
+                state["is_validated"] = False
+                state["validation_feedback"] = validation_result.get("feedback", f"Confidence too low: {confidence:.2f}")
+                logger.warning(f"Response validation failed (attempt {state['validation_attempts']}, confidence: {confidence:.2f}): {state['validation_feedback']}")
+                
+        except Exception as e:
+            logger.exception("Validation node error")
+            state["errors"].append(f"Validation error: {str(e)}")
+            # If validation itself fails, use low confidence
+            state["confidence_score"] = 0.5
+            state["is_validated"] = True
+        
+        return state
+    
+    async def _validate_response_quality(
+        self,
+        response: str,
+        user_message: str,
+        state: WorkflowState
+    ) -> Dict[str, Any]:
+        """
+        Validate response quality using rule-based checks and LLM validation
+        Returns confidence score (0.0 - 1.0) along with validation result
+        """
+        confidence_score = 0.0
+        
+        # Rule-based checks with confidence scoring
+        if len(response.strip()) < 10:
+            return {"is_valid": False, "feedback": "Response is too short", "confidence": 0.1}
+        
+        if response.count(" ") < 3:
+            return {"is_valid": False, "feedback": "Response lacks substance", "confidence": 0.2}
+        
+        # Check for common error patterns
+        error_patterns = [
+            "i cannot", "i can't", "i don't have", "i'm unable",
+            "as an ai", "i apologize, but", "i'm sorry, but"
+        ]
+        response_lower = response.lower()
+        if any(pattern in response_lower for pattern in error_patterns) and len(response) < 100:
+            return {"is_valid": False, "feedback": "Response appears to be a refusal or error message", "confidence": 0.3}
+        
+        # Base confidence from rule-based checks
+        confidence_score = 0.5  # Passed basic checks
+        
+        # LLM-based validation for semantic quality with confidence scoring
+        try:
+            from ..providers import create_provider
+            specs = state["specs"]
+            
+            if not specs.provider:
+                # No provider, skip LLM validation - return base confidence
+                return {"is_valid": True, "confidence": confidence_score}
+            
+            # Use same provider for validation
+            config = specs.provider.to_dict() if hasattr(specs.provider, 'to_dict') else {}
+            p_type = specs.provider.provider_type
+            config.pop("provider_type", None)
+            
+            # Auto-inject API keys
+            key_map = {
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY",
+                "gemini": "GEMINI_API_KEY"
+            }
+            if p_type in key_map and "api_key" not in config:
+                config["api_key"] = os.getenv(key_map[p_type])
+            
+            provider = create_provider(p_type, config)
+            if not await provider.initialize():
+                # Provider init failed, skip LLM validation
+                return {"is_valid": True, "confidence": confidence_score}
+            
+            try:
+                validation_prompt = f"""Evaluate this AI response and provide a confidence score.
+
+User Message: {user_message}
+
+AI Response: {response}
+
+Evaluate:
+1. Relevance to the user's question (0-25 points)
+2. Helpfulness and informativeness (0-25 points)
+3. Accuracy and correctness (0-25 points)
+4. Completeness (not cut off, addresses the question) (0-25 points)
+
+Respond in this EXACT format:
+SCORE: <number 0-100>
+REASONING: <brief explanation>
+
+If score >= 75, the response is acceptable. Below 75, it needs improvement."""
+
+                validation_response = await provider.generate_response(
+                    messages=[{"role": "user", "content": validation_prompt}],
+                    max_tokens=200,
+                    temperature=0.3
+                )
+                
+                validation_text = validation_response.get("content", "").strip()
+                
+                # Parse confidence score
+                import re
+                score_match = re.search(r'SCORE:\s*(\d+)', validation_text)
+                
+                if score_match:
+                    llm_score = int(score_match.group(1))
+                    # Normalize to 0-1 scale
+                    llm_confidence = min(llm_score / 100.0, 1.0)
+                    
+                    # Combine base confidence with LLM confidence (weighted average)
+                    final_confidence = (confidence_score * 0.3) + (llm_confidence * 0.7)
+                    
+                    # Extract reasoning
+                    reasoning_match = re.search(r'REASONING:\s*(.+)', validation_text, re.IGNORECASE | re.DOTALL)
+                    reasoning = reasoning_match.group(1).strip() if reasoning_match else "No reasoning provided"
+                    
+                    is_valid = final_confidence >= 0.75
+                    
+                    if is_valid:
+                        return {"is_valid": True, "confidence": final_confidence, "reasoning": reasoning}
+                    else:
+                        return {
+                            "is_valid": False, 
+                            "confidence": final_confidence,
+                            "feedback": f"Confidence too low ({final_confidence:.2f}): {reasoning}"
+                        }
+                else:
+                    # Couldn't parse score, fall back to keyword check
+                    logger.warning("Could not parse confidence score from validation response")
+                    if "acceptable" in validation_text.lower() or "good" in validation_text.lower():
+                        return {"is_valid": True, "confidence": 0.75}
+                    else:
+                        return {"is_valid": False, "confidence": 0.5, "feedback": validation_text}
+                    
+            finally:
+                await provider.close()
+                
+        except Exception as e:
+            logger.warning(f"LLM validation error, accepting response with base confidence: {e}")
+            return {"is_valid": True, "confidence": confidence_score}
+    
     @observe(name="workflow_node_finalize")
     async def _finalize_node(self, state: WorkflowState) -> WorkflowState:
         state["execution_steps"].append("finalize")
+        
+        # Check if confidence is below threshold after all attempts
+        confidence = state.get("confidence_score", 0.0)
+        
+        if confidence < 0.75:
+            # Replace with fallback response for low confidence
+            logger.warning(f"Final confidence {confidence:.2f} below threshold 0.75, using fallback response")
+            
+            # Generate appropriate fallback message
+            fallback_messages = [
+                "I'm not confident I can provide an accurate answer to that question right now.",
+                "I don't have enough information to give you a reliable response at this time.",
+                "I'm uncertain about the best way to answer that. Could you rephrase or provide more context?",
+                "I don't know enough about this topic to provide a helpful response."
+            ]
+            
+            # Use the first fallback as default
+            state["final_content"] = fallback_messages[0]
+            state["errors"].append(f"Low confidence response ({confidence:.2f}) replaced with fallback")
+        
         state["status"] = "completed_with_errors" if state["errors"] else "completed"
         state["end_time"] = time.time()
-        logger.info(f"Workflow {state['execution_id']} finished: {state['status']}")
+        logger.info(f"Workflow {state['execution_id']} finished: {state['status']} (confidence: {confidence:.2f}, attempts: {state.get('validation_attempts', 0)})")
         return state
 
     # Routing
@@ -488,6 +732,21 @@ class WorkflowEngine:
         specs = state["specs"]
         if specs.tools and any(t.enabled for t in specs.tools): return "tools"
         return "messages"
+    
+    @observe(name="workflow_route_after_validation")
+    def _route_after_validation(self, state: WorkflowState) -> str:
+        """Route after validation: retry if failed and under max attempts, else finalize"""
+        if state["is_validated"]:
+            return "finalize"
+        
+        if state["validation_attempts"] >= state["max_validation_runs"]:
+            logger.warning(f"Max validation attempts ({state['max_validation_runs']}) reached, finalizing anyway")
+            state["is_validated"] = True  # Force accept after max attempts
+            state["errors"].append(f"Response validation failed after {state['validation_attempts']} attempts")
+            return "finalize"
+        
+        logger.info(f"Retrying response generation (attempt {state['validation_attempts'] + 1}/{state['max_validation_runs']})")
+        return "retry"
 
     # User Context Utilities
     
