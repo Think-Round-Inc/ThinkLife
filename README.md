@@ -6,18 +6,20 @@
 ![Python](https://img.shields.io/badge/python-3.9+-blue?logo=python&logoColor=white)
 ![Pre-releases](https://img.shields.io/github/v/release/Think-Round-Inc/ThinkLife?include_prereleases&label=pre-releases&sort=semver)
 ![License](https://img.shields.io/github/license/Think-Round-Inc/ThinkLife)
-![Version](https://img.shields.io/badge/version-0.7.0-yellow)
+![Version](https://img.shields.io/badge/version-0.7.35-yellow)
 
-**A comprehensive platform showcasing Think Round's AI integration across healing rooms, exterior spaces and related projects.**
+**An experimental platform for local development and internal testing of AI-driven experiences at Think Round.**
 
 ---
 
 ## **Platform Overview**
 
-ThinkLife serves as a **transparent demonstration** of how Think Round integrates artificial intelligence to enhance our mission of healing and transformation. The platform consists of three main experience areas:
+ThinkLife is currently used for **local development and internal testing only**. It serves as a sandbox environment to design, refine, and validate new AI-driven experiences before they are exposed to real users. This platform showcases **pre-release and beta versions** of AI applications that are still under active development and review.
+
+Only the most stable, responsible, and impactful of these applications will move forward into the first public web release after formal approval from Think Round's leadership.
 
 ### **Inside Our AI**
-Explore how we thoughtfully integrate AI technology across our programs, featuring trauma-informed design principles, ethical AI implementation, and transparent technology practices.
+See how AI enhances our healing rooms, arts programs, and community initiatives with trauma-informed approaches. Explore our philosophy of transparent, ethical AI implementation.
 
 ### **Healing Rooms** 
 Experience trauma-informed AI support through our empathetic companion Zoe, designed with ACE assessment integration, crisis detection, and personalized healing journeys.
@@ -34,107 +36,131 @@ Discover space that preserve human creativity while leveraging technology for ac
 ### **Definition & Purpose**
 **Zoe** is Think Round's trauma-informed AI companion, designed to provide empathetic support while demonstrating responsible AI integration in healing contexts. Named to represent life and growth, Zoe serves as both a supportive companion and a transparent example of how AI can be thoughtfully designed to serve human wellbeing.
 
-### **Response Generation Logic**
-Zoe's responses are generated through a sophisticated multi-layered system:
+### **What Makes Zoe Different**
 
-#### **1. Trauma-Informed Processing**
-- **ACE Assessment Integration**: Responses are personalized based on Adverse Childhood Experiences (ACE) questionnaire results
-- **Trauma Category Recognition**: System identifies specific trauma areas (emotional abuse, physical neglect, family dysfunction, etc.) for sensitive contextualization
-- **Safety-First Language**: All responses are filtered through trauma-safe language patterns to avoid triggering content
+Zoe is built with trauma-informed care principles from the ground up, ensuring every interaction is safe, supportive, and personalized to your unique healing journey.
 
-#### **2. Multi-Provider AI Architecture**
-- **Primary Provider**: OpenAI GPT-4o-mini for natural language processing
-- **Fallback Systems**: Redundant providers ensure consistent availability
-- **Context Management**: Conversation history and user context are maintained across sessions
-- **Real-time Processing**: FastAPI backend ensures low-latency response generation
+**Personalized Support**
+- Responses are tailored based on your Adverse Childhood Experiences (ACE) assessment
+- Understands specific trauma areas and responds with appropriate sensitivity
+- Maintains conversation history to provide contextual, meaningful interactions
 
-#### **3. Personality & Safety Filters**
-- **Empathetic Tone**: Responses emphasize validation, hope, and strength-based messaging
-- **Off-Topic Detection**: Advanced pattern matching redirects harmful or inappropriate requests
-- **Crisis Recognition**: Built-in detection for self-harm, violence, or substance abuse requests with immediate safety responses
-- **Minor Protection**: Special safeguards prevent harmful advice to underage users
+**Safety First**
+- Crisis detection for immediate connection to professional resources
+- Harmful content filtering to prevent re-traumatization
+- Special protections for minor users
+- Professional boundaries with clear guidance on when to seek additional help
 
-### **Core Capabilities**
+**Always Available**
+- 24/7 access to empathetic support
+- Consistent, reliable responses
+- Avatar mode with dynamic expressions and voice interaction
+- Real-time processing for smooth, natural conversations
 
-#### **Trauma-Informed Support**
-- **ACE Score-Based Routing**: Users with scores ≥4 are directed to professional support, scores <4 can choose chat or training
-- **Personalized Empathy**: Responses tailored to specific trauma experiences without re-traumatization
-- **Professional Boundaries**: Clear guidance about limitations and when to seek professional help
+### **How You Experience Zoe**
 
-#### **Advanced Interaction Features**
-- **Avatar Mode**: Dynamic facial expressions and mouth movements with professional voice synthesis
-- **Context Memory**: Maintains conversation history and user preferences across sessions
-- **Real-Time Processing**: Instant response generation with smooth conversation flow
-- **Multi-Modal Communication**: Text and voice interaction options
+**Start Your Journey**
+- Complete the ACE assessment for personalized support
+- Users with higher trauma scores are guided to appropriate resources
+- Choose between chat support or educational content based on your needs
 
-#### **Safety & Security**
-- **Harmful Content Prevention**: Comprehensive filtering for suicide, violence, substance abuse, and illegal activity requests
-- **Minor Protection**: Special detection patterns for underage users with appropriate safeguards
-- **Privacy Protection**: Secure handling of sensitive personal information
-- **Transparent Operations**: Open demonstration of AI decision-making processes
+**Interact Naturally**
+- Text-based conversations with empathetic, validating responses
+- Optional avatar mode with facial expressions and voice
+- Conversations remember context and build on previous interactions
 
-#### **Technical Architecture**
-- **Scalable Backend**: FastAPI with Python for high-performance processing
-- **Modern Frontend**: Next.js 15 with TypeScript and Framer Motion animations
-- **Database Integration**: PostgreSQL with Prisma ORM for user management
-- **Authentication**: Supabase integration with NextAuth for secure access
+**Stay Safe**
+- Immediate crisis detection and resource connection
+- Clear guidance on professional help when needed
+- Privacy-first design with secure data handling
+- Transparent about AI capabilities and limitations
 
 ---
 
-## **AI Integration Possibilities**
+## **Current & Future Agents**
 
-ThinkLife demonstrates the potential for thoughtful AI integration across therapeutic and creative contexts. Through this platform, we explore how artificial intelligence might support arts therapy, enhance healing room experiences, strengthen community connections, and make educational content more accessible and personalized. Our approach prioritizes human agency while investigating how technology can amplify the healing arts and foster deeper connections within supportive communities.
+ThinkLife is expanding beyond Zoe to include additional AI agents designed for specific purposes:
 
----
+### **Currently Available**
+**Zoe** - Trauma-informed AI companion providing empathetic support and emotional wellbeing assistance in healing rooms.
 
-## **Technical Features**
+### **Under Construction**
+**Storytelling Agent** - Interactive narrative experiences to support healing through creative expression and shared stories.
 
-### **Frontend Experience**
-- **Next.js 15** with TypeScript for robust web application
-- **Framer Motion** for smooth avatar animations
-- **Tailwind CSS** for responsive, accessible design
-- **Real-time Audio Processing** for seamless voice interaction
+**FAQ Agent** - Intelligent question-answering system to help users navigate Think Round programs and resources.
 
-### **Backend Infrastructure**
-- **FastAPI** for high-performance API endpoints
-- **OpenAI Integration** for natural language processing and speech
-- **Trauma-Informed Logic** embedded in conversation flow
-- **Security-First Design** with proper API key management
+**Onboarding Agent** - Agent for Onboarding new interns exploring Think Round's healing spaces and community.
 
-### **AI Capabilities**
-- **Natural Language Understanding** through advanced LLM integration
-- **Contextual Memory** for personalized interactions
-- **Speech Synthesis** with professional-quality voice generation
-- **Emotion Recognition** for appropriate response selection
+Each agent is being developed with the same trauma-informed, safety-first approach that defines Zoe, ensuring consistent quality, may vary purpose and care across all AI interactions.
 
 ---
 
-*For detailed setup instructions, see [LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)*
+## **What We're Exploring**
+
+ThinkLife demonstrates the potential for thoughtful AI integration across therapeutic and creative contexts:
+
+- **Arts Therapy Enhancement**: AI-assisted creative expression and healing through art
+- **Community Connection**: Technology that strengthens bonds between healing community members
+- **Accessible Education**: Personalized learning paths for trauma recovery and personal growth
+- **Healing Room Experiences**: Ambient AI support that adapts to individual needs
+
+Our approach prioritizes human agency, ensuring technology amplifies the healing arts rather than replacing human connection.
+
+---
+
+## **Technology Behind ThinkLife**
+
+ThinkLife uses modern web technologies and AI systems to deliver safe, responsive, and personalized experiences:
+
+**User Experience**
+- Smooth animations and transitions for natural interactions
+- Responsive design that works on all devices
+- Real-time voice interaction with professional-quality synthesis
+- Accessible interface following inclusive design principles
+
+**AI Systems**
+- Advanced language models for natural conversation
+- Context-aware responses that learn from interactions
+- Intelligent confidence scoring to ensure quality responses
+- Multi-layered validation for safety and appropriateness
+
+**Security & Privacy**
+- Secure authentication and data protection
+- Trauma-informed content filtering
+- Privacy-first architecture
+- Transparent AI decision-making processes
+
+---
+
+*For technical setup and development information, see [LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)*
 
 ## **Our AI Philosophy**
 
 ### **Transparency First**
-We believe users deserve to understand how AI works in their experience. ThinkxLife demonstrates our commitment to **explainable AI** and **user empowerment**.
+Users deserve to understand how AI works in their experience. ThinkLife openly demonstrates our AI systems, showing not just telling how technology can serve healing with purpose and heart.
 
 ### **Human-Centered Design**
-Technology serves people, not the other way around. Every AI feature is designed to **amplify human connection** and **support healing journeys**.
+Technology serves people, not the other way around. Every AI feature is designed to amplify human connection and support healing journeys, never to replace human care and compassion.
 
 ### **Ethical Implementation**
 Our AI systems are built with **trauma-informed principles**, **privacy protection**, and **inclusive design** from the ground up.
 
-### **Continuous Learning**
-We openly share our learnings, challenges, and improvements in integrating AI responsibly within healing and therapeutic contexts.
+### **Experimental and Evolving**
+As a development sandbox, ThinkLife allows us to test, learn, and refine AI applications before they reach real users. We continuously improve based on testing, feedback, and ethical review.
 
 ---
 
 ## **Contributing to Responsible AI**
 
-ThinkLife is more than a demonstration: it's a **living example** of how nonprofits can leverage AI ethically and effectively. We welcome:
+ThinkLife is an **experimental platform** currently in active development for internal testing and refinement. Applications developed here undergo rigorous review before potential public release.
 
-- **Feedback** on our AI implementation approaches
-- **Contributions** to improve accessibility and inclusivity
-- **Collaboration** with other organizations exploring AI integration
-- **Research partnerships** in trauma-informed AI design
+**What This Means:**
+- Features may change or be removed as we test and learn
+- Not all experimental features will move to public release
+- Only stable, responsible, and impactful applications advance to production
+- Formal approval from Think Round leadership required before public deployment
+
+We're committed to building AI tools that genuinely serve healing and transformation, taking the time needed to get it right.
 
 ---
 
@@ -143,9 +169,10 @@ ThinkLife is more than a demonstration: it's a **living example** of how nonprof
 - **Think Round Website**: [thinkround.org](https://thinkround.org)
 - **Contact Us**: For questions about our AI integration approach
 - **Documentation**: Explore our technical implementation details
-- **Community**: Join conversations about responsible AI in healing
+- **Community**: Join conversations about responsible AI in healing through info@thinkround.org
 
 ---
 
-**Think Round Inc. © 2025**  
-*Demonstrating AI integration with purpose, transparency, and heart.*
+**Think Round Inc. © 2026**  
+*Experimental AI platform by the Generative AI Engineers team*  
+*Building technology with purpose, transparency, and heart*
