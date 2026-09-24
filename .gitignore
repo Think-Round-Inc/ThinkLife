@@ -1,8 +1,6 @@
-# dependencies
-/frontend/node_modules/
-/node_modules/
-
+# =========================
 # Environment variables
+# =========================
 .env
 .env.local
 .env.development.local
@@ -12,111 +10,100 @@
 /frontend/.env
 /frontend/.env.local
 
-
-
-# Next.js & Jest artifacts
-/.next/
-/frontend/.next/
-/coverage/
-/frontend/coverage/
-
-# Build outputs
-/frontend/dist/
-/frontend/build/
-/frontend/out/
-
-# TypeScript build info
-*.tsbuildinfo
-/frontend/*.tsbuildinfo
-
-# OS & editor cruft
-.DS_Store
-Thumbs.db
-*.log
-
+# =========================
 # Python
+# =========================
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-/backend/lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Python
-__pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-# lib/  <-- Commented out because it ignores frontend/lib
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
-# Environment
-.env
-.venv
-env/
+# Virtual environments
+.venv/
 venv/
+env/
 ENV/
 env.bak/
 venv.bak/
 
-# IDE
+# Python build
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+/frontend/node_modules/
+
+.next/
+/frontend/.next/
+
+coverage/
+/frontend/coverage/
+
+frontend/dist/
+frontend/build/
+frontend/out/
+
+*.tsbuildinfo
+/frontend/*.tsbuildinfo
+
+# =========================
+# Project-specific (YOUR BOT)
+# =========================
+data/vector_db/
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# Database
+# =========================
+*.db
+*.sqlite3
+
+# =========================
+# IDE / Editor
+# =========================
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Logs
-*.log
-logs/
-
-# Database
-*.db
-*.sqlite3
-
-# OS
+# =========================
+# OS files
+# =========================
 .DS_Store
-.DS_Store?
+Thumbs.db
 ._*
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db
 
-# Temporary files
+# =========================
+# Temp files
+# =========================
 *.tmp
 *.temp
-.cache/ 
-
+.cache/
 
 checkpoints/
