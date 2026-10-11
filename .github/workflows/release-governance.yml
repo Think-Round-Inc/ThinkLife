@@ -1,0 +1,27 @@
+name: Release governance
+on:
+  pull_request:
+  push:
+    branches: [Feifan, main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test release gates without credentials
+        run: python -m unittest discover -s tests/release -v
+      - name: Validate source environment coverage
+        run: python scripts/validate_release_env.py --check-contract
+      - name: Generate candidate evidence
+        run: python scripts/generate_release_manifest.py --release-id "candidate-${GITHUB_SHA}" --require-clean
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-governance-${{ github.sha }}
+          path: .release/
+          if-no-files-found: error

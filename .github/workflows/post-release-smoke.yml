@@ -1,0 +1,78 @@
+name: Post-release smoke tests
+on:
+  workflow_dispatch:
+    inputs:
+      frontend_url:
+        description: Deployed frontend URL
+        required: true
+        type: string
+      backend_url:
+        description: Deployed backend URL
+        required: true
+        type: string
+      keycloak_url:
+        description: Deployed Keycloak URL
+        required: true
+        type: string
+      realm:
+        description: Keycloak realm
+        default: thinklife
+        type: string
+      expected_commit:
+        description: Full deployed commit SHA
+        required: true
+        type: string
+      release_id:
+        description: Release ID in frontend release.json
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      frontend_url:
+        required: true
+        type: string
+      backend_url:
+        required: true
+        type: string
+      keycloak_url:
+        required: true
+        type: string
+      realm:
+        default: thinklife
+        type: string
+      expected_commit:
+        required: true
+        type: string
+      release_id:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check deployed release
+        env:
+          FRONTEND_URL: ${{ inputs.frontend_url }}
+          BACKEND_URL: ${{ inputs.backend_url }}
+          KEYCLOAK_URL: ${{ inputs.keycloak_url }}
+          REALM: ${{ inputs.realm }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          RELEASE_ID: ${{ inputs.release_id }}
+        run: >-
+          python scripts/post_release_smoke.py
+          --frontend-url "$FRONTEND_URL" --backend-url "$BACKEND_URL"
+          --keycloak-url "$KEYCLOAK_URL" --realm "$REALM"
+          --expected-commit "$EXPECTED_COMMIT" --release-id "$RELEASE_ID"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: post-release-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .release/smoke-results.json
+          if-no-files-found: error

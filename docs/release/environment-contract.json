@@ -1,0 +1,241 @@
+{
+  "backend": {
+    "ANTHROPIC_API_KEY": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/brain/cortex/workflow_engine.py (dynamic key_map)"
+      ]
+    },
+    "CHROMA_DB_DIR": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/agents/zoe/utils/knowledge_index_builder.py"
+      ]
+    },
+    "CHUNK_SIZE": {
+      "required": false,
+      "type": "int",
+      "sources": [
+        "backend/agents/zoe/utils/knowledge_index_builder.py"
+      ],
+      "min": 1
+    },
+    "CONTEXT_TXT_PATH": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/agents/zoe/utils/knowledge_index_builder.py"
+      ]
+    },
+    "EMPATHY_CSV_PATH": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/agents/zoe/utils/knowledge_index_builder.py"
+      ]
+    },
+    "GEMINI_API_KEY": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/brain/cortex/workflow_engine.py (dynamic key_map)"
+      ]
+    },
+    "KEYCLOAK_CLIENT_ID": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/brain/guardrails/session_manager.py"
+      ],
+      "default": "thinklife-frontend"
+    },
+    "KEYCLOAK_REALM": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/brain/guardrails/session_manager.py"
+      ],
+      "default": "thinklife"
+    },
+    "KEYCLOAK_URL": {
+      "required": false,
+      "type": "url",
+      "sources": [
+        "backend/brain/guardrails/session_manager.py"
+      ],
+      "default": "http://localhost:8080"
+    },
+    "KNOWLEDGE_JSON_PATH": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/agents/zoe/utils/knowledge_index_builder.py"
+      ]
+    },
+    "LANGFUSE_HOST": {
+      "required": false,
+      "type": "url",
+      "sources": [
+        "backend/evaluation/evaluation_manager.py"
+      ],
+      "default": "https://us.cloud.langfuse.com"
+    },
+    "LANGFUSE_PUBLIC_KEY": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/evaluation/evaluation_manager.py"
+      ]
+    },
+    "LANGFUSE_SECRET_KEY": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/evaluation/evaluation_manager.py"
+      ]
+    },
+    "MAX_EMPATHY_EXAMPLES": {
+      "required": false,
+      "type": "int",
+      "sources": [
+        "backend/agents/zoe/utils/knowledge_index_builder.py"
+      ],
+      "min": 1
+    },
+    "OPENAI_API_KEY": {
+      "required": true,
+      "type": "string",
+      "sources": [
+        "backend/agents/zoe/tts_service.py",
+        "backend/agents/zoe/utils/knowledge_index_builder.py",
+        "backend/brain/data_sources/vector_db.py",
+        "backend/brain/providers/openai.py",
+        "backend/evaluators/base.py",
+        "backend/evaluators/runner.py",
+        "backend/main.py"
+      ]
+    },
+    "OPENAI_MAX_TOKENS": {
+      "required": false,
+      "type": "int",
+      "sources": [
+        "backend/main.py"
+      ],
+      "default": "2000",
+      "min": 1
+    },
+    "OPENAI_MODEL": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/main.py"
+      ],
+      "default": "gpt-4o-mini"
+    },
+    "OPENAI_TEMPERATURE": {
+      "required": false,
+      "type": "float",
+      "sources": [
+        "backend/main.py"
+      ],
+      "default": "0.7",
+      "min": 0,
+      "max": 2
+    },
+    "TAVILY_API_KEY": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/brain/tools/tavily_search.py"
+      ]
+    },
+    "ZOE_VECTOR_DB_PATH": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/plugins/zoe_agent.py"
+      ]
+    }
+  },
+  "frontend": {
+    "ADMIN_EMAILS": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "frontend/lib/auth-middleware.ts"
+      ]
+    },
+    "GOOGLE_CLIENT_ID": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "frontend/lib/auth.ts"
+      ]
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "frontend/lib/auth.ts"
+      ]
+    },
+    "NEXTAUTH_SECRET": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "frontend/lib/auth.ts"
+      ],
+      "note": "Required only if legacy NextAuth integration is enabled; verify its usage before enabling."
+    },
+    "NEXT_PUBLIC_ADMIN_EMAILS": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "frontend/lib/auth-middleware.ts"
+      ]
+    },
+    "NEXT_PUBLIC_API_URL": {
+      "required": true,
+      "type": "url",
+      "sources": [
+        "frontend/app/api/chat/route.ts"
+      ]
+    },
+    "NEXT_PUBLIC_KEYCLOAK_CLIENT_ID": {
+      "required": true,
+      "type": "string",
+      "sources": [
+        "frontend/lib/keycloak.ts"
+      ]
+    },
+    "NEXT_PUBLIC_KEYCLOAK_REALM": {
+      "required": true,
+      "type": "string",
+      "sources": [
+        "frontend/lib/keycloak.ts"
+      ]
+    },
+    "NEXT_PUBLIC_KEYCLOAK_URL": {
+      "required": true,
+      "type": "url",
+      "sources": [
+        "frontend/lib/keycloak.ts"
+      ]
+    },
+    "NODE_ENV": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "frontend/lib/keycloak.ts"
+      ]
+    }
+  },
+  "faq": {
+    "OPENAI_API_KEY": {
+      "required": true,
+      "note": "Consumed implicitly by LangChain SDK; FAQ is a separately deployed optional service."
+    }
+  }
+}
