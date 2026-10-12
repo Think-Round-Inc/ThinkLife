@@ -21,7 +21,9 @@ jobs:
       - name: Generate candidate evidence
         run: python scripts/generate_release_manifest.py --release-id "candidate-${GITHUB_SHA}" --require-clean
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: release-governance-${{ github.sha }}
-          path: .release/
+          name: post-release-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .release/smoke-results.json
+          include-hidden-files: true
           if-no-files-found: error
