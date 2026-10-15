@@ -12,6 +12,7 @@ class ProviderType(str, Enum):
     OPENAI = "openai"
     GEMINI = "gemini"
     ANTHROPIC = "anthropic"
+    OPENROUTER = "openrouter"
 
 
 @dataclass

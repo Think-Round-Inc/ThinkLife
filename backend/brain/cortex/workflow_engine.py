@@ -483,7 +483,8 @@ Please generate a better, more helpful, and complete response that addresses the
             key_map = {
                 "openai": "OPENAI_API_KEY",
                 "anthropic": "ANTHROPIC_API_KEY", 
-                "gemini": "GEMINI_API_KEY"
+                "gemini": "GEMINI_API_KEY",
+                "openrouter": "OPENROUTER_API_KEY"
             }
             if p_type in key_map and "api_key" not in config:
                 config["api_key"] = os.getenv(key_map[p_type])
@@ -612,7 +613,8 @@ Please generate a better, more helpful, and complete response that addresses the
             key_map = {
                 "openai": "OPENAI_API_KEY",
                 "anthropic": "ANTHROPIC_API_KEY",
-                "gemini": "GEMINI_API_KEY"
+                "gemini": "GEMINI_API_KEY",
+                "openrouter": "OPENROUTER_API_KEY"
             }
             if p_type in key_map and "api_key" not in config:
                 config["api_key"] = os.getenv(key_map[p_type])

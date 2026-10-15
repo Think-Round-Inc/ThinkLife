@@ -96,8 +96,8 @@ class ZoeAgent(IAgent):
                 ),
             ],
             provider=ProviderSpec(
-                provider_type="openai",
-                model="gpt-4o-mini",
+                provider_type=os.getenv("ZOE_PROVIDER_TYPE", "openai"),
+                model=os.getenv("ZOE_PROVIDER_MODEL", "gpt-4o-mini"),
                 temperature=0.7,
                 max_tokens=1500,
                 custom_params={"presence_penalty": 0.1, "frequency_penalty": 0.1}

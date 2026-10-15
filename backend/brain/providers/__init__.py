@@ -39,16 +39,23 @@ try:
 except ImportError as e:
     print(f"Warning: Anthropic provider not available: {e}")
 
+try:
+    from .openrouter import OpenRouterProvider, create_openrouter_provider
+    __all__.extend(["OpenRouterProvider", "create_openrouter_provider"])
+except ImportError as e:
+    print(f"Warning: OpenRouter provider not available: {e}")
+
 # Provider factory for easy instantiation
 def create_provider(provider_type: str, config: dict = None):
     """Factory function to create providers with default settings"""
     if config is None:
         config = {}
-    
+
     provider_map = {
         "openai": (OpenAIProvider, create_openai_provider),
-        "gemini": (GeminiProvider, create_gemini_provider), 
+        "gemini": (GeminiProvider, create_gemini_provider),
         "anthropic": (AnthropicProvider, create_anthropic_provider),
+        "openrouter": (OpenRouterProvider, create_openrouter_provider),
     }
     
     if provider_type not in provider_map:
@@ -69,6 +76,7 @@ def get_available_providers():
         "OpenAIProvider": "openai",
         "GeminiProvider": "gemini", 
         "AnthropicProvider": "anthropic",
+        "OpenRouterProvider": "openrouter",
     }
     
     for class_name, provider_type in provider_map.items():

@@ -116,6 +116,25 @@ OPENAI_MODEL=gpt-4o-mini
 OPENAI_MAX_TOKENS=2000
 OPENAI_TEMPERATURE=0.7
 
+# Anthropic Configuration (OPTIONAL - only needed if using the "anthropic" provider)
+# ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Gemini Configuration (OPTIONAL - only needed if using the "gemini" provider)
+# GEMINI_API_KEY=your_gemini_api_key_here
+
+# OpenRouter Configuration (OPTIONAL - only needed if using the "openrouter" provider)
+# OpenRouter is an OpenAI-compatible gateway to many model vendors
+# (https://openrouter.ai/models). Models are passed as "vendor/model" ids,
+# e.g. model="openai/gpt-4o-mini" or model="anthropic/claude-3.5-sonnet".
+# OPENROUTER_API_KEY=your_openrouter_api_key_here
+
+# Zoe's chatbot provider (OPTIONAL - defaults to OpenAI/gpt-4o-mini)
+# Setting the API key above does NOT switch the chatbot to that provider -
+# Zoe's agent (plugins/zoe_agent.py) reads these two vars to pick which
+# provider+model it actually calls. Set both to use OpenRouter, e.g.:
+# ZOE_PROVIDER_TYPE=openrouter
+# ZOE_PROVIDER_MODEL=openai/gpt-4o-mini
+
 # Vector Database Configuration (OPTIONAL)
 # CHROMA_DB_DIR=chroma_db
 

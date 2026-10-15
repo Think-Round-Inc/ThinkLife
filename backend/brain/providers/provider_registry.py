@@ -22,7 +22,11 @@ PROVIDER_CONFIGS = {
     "gemini": {
         "models": ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-1.5-flash-8b", "gemini-1.5-pro-002"],
         "default_model": "gemini-1.5-flash",
-    }
+    },
+    "openrouter": {
+        "models": ["openrouter/free", "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "meta-llama/llama-3.1-70b-instruct", "google/gemini-flash-1.5"],
+        "default_model": "openrouter/free",
+    },
 }
 
 
