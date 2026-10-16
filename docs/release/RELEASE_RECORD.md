@@ -1,6 +1,6 @@
 # Release record (copy per release; do not store secret values)
 
-Status: DRAFT — not approved until required evidence is attached.
+Status: DRAFT
 
 | Field | Value |
 | --- | --- |
