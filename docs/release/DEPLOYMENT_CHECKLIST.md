@@ -32,7 +32,7 @@ required item prevents release approval.
 - [ ] Retain current service until candidate is ready when host supports this.
 - [ ] Deploy the exact recorded backend/frontend artifacts and matching env.
 - [ ] Confirm frontend public/release.json is included and caches refreshed.
-- [ ] Verify backend artifact digest via host control plane (no backend SHA API).
+- [ ] Verify backend artifact digest via host control plane.
 - [ ] Verify Keycloak realm/client and database/index version compatibility.
 - [ ] Record host deployment IDs and UTC start/end times.
 

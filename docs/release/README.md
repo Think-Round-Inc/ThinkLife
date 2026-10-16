@@ -1,9 +1,5 @@
-# User Story 6.2 — Release governance
+# User Story 6.2 — Release Documents
 
-Scope: release tooling and documentation only. No changes to application behavior,
-model choices, prompt text, authentication, or CortexFlow. Python tools require
-Python 3.9+ and only the standard library. Run from the repository root with
-`python scripts/...`; no `backend` imports and no Unix shebang requirement.
 
 | Task | Implementation | Evidence |
 | --- | --- | --- |
