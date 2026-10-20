@@ -13,6 +13,8 @@ class WorkflowStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
+    COMPLETED_WITH_ERRORS = "completed_with_errors"
+    ESCALATED = "escalated"
     FAILED = "failed"
     CANCELLED = "cancelled"
 
@@ -42,20 +44,11 @@ class WorkflowStep:
     end_time: Optional[datetime] = None
 
 
-@dataclass
-class WorkflowExecution:
-    """Represents a workflow execution instance"""
-    execution_id: str
-    workflow_name: str
-    steps: List[WorkflowStep]
-    status: WorkflowStatus = WorkflowStatus.PENDING
-    context: Dict[str, Any] = field(default_factory=dict)
-    results: Dict[str, Any] = field(default_factory=dict)
-    errors: List[str] = field(default_factory=list)
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    idempotency_key: Optional[str] = None
-    
+# NOTE: a first `WorkflowExecution` dataclass used to live here and was silently
+# shadowed by the one at the bottom of this file. It was removed (US 1.1); the
+# surviving definition below is the one the rest of the code always used.
+
+
 @dataclass
 class ProcessingSpec:
     """Specification for how agents want the request to be processed"""
@@ -149,3 +142,66 @@ class WorkflowExecution:
     metadata: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
 
+
+
+@dataclass
+class WorkflowProfile:
+    """
+    Per-agent settings for the standard LangGraph workflow (US 1.1).
+
+    Every agent (Zoe, FAQ, Bard, ...) runs the same graph; the profile decides
+    the limits and the failure behaviour. Built-in profiles live in
+    `brain/cortex/workflow_profiles.py`; an agent's own `ProcessingSpec`
+    (max_iterations, timeout_seconds, enable_safety_checks) overrides them.
+    """
+    agent_type: str = "default"
+
+    # Quality loop: total answer attempts (first try included) before escalating
+    max_iterations: int = 3
+    confidence_threshold: float = 0.75
+    llm_validation: bool = True  # second LLM call that scores each answer
+
+    # Time budget. No new work (retry, fallback) starts after run_timeout_seconds;
+    # an in-flight provider call may finish, bounded by provider_timeout_seconds.
+    run_timeout_seconds: float = 60.0
+    provider_timeout_seconds: float = 30.0
+
+    # Transient-error retries (timeouts, 429, 5xx, dropped connections)
+    provider_retry_attempts: int = 3
+    data_source_retry_attempts: int = 2
+    retry_initial_interval: float = 1.0
+    retry_max_interval: float = 10.0
+    retry_jitter: bool = True  # LangGraph adds up to 1 s of random delay per retry
+
+    # Output policy checks (brain/guardrails/policy_validator.py)
+    safety_checks: bool = True
+
+    # Tried in order, once each, when the primary provider is still failing
+    # after its retries. Items are ProviderSpec objects.
+    fallback_providers: List[Any] = field(default_factory=list)
+
+    def graph_key(self) -> tuple:
+        """Settings baked into the compiled graph (retry policy, node timeout)."""
+        return (
+            self.provider_retry_attempts,
+            self.retry_initial_interval,
+            self.retry_max_interval,
+            self.retry_jitter,
+            self.provider_timeout_seconds,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "agent_type": self.agent_type,
+            "max_iterations": self.max_iterations,
+            "confidence_threshold": self.confidence_threshold,
+            "llm_validation": self.llm_validation,
+            "run_timeout_seconds": self.run_timeout_seconds,
+            "provider_timeout_seconds": self.provider_timeout_seconds,
+            "provider_retry_attempts": self.provider_retry_attempts,
+            "data_source_retry_attempts": self.data_source_retry_attempts,
+            "safety_checks": self.safety_checks,
+            "fallback_providers": [
+                f"{p.provider_type}:{p.model}" for p in self.fallback_providers
+            ],
+        }

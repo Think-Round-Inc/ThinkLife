@@ -6,7 +6,9 @@ openai
 langchain
 langchain-openai
 langchain-chroma
-langgraph
+langgraph>=1.2,<2
+langgraph-checkpoint-sqlite
+aiosqlite
 chromadb
 python-multipart
 anthropic

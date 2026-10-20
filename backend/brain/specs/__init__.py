@@ -32,7 +32,8 @@ from .guardrails_specs import SecurityConfig
 
 # Workflow specs
 from .workflow_specs import (
-    WorkflowStatus, WorkflowType, WorkflowStep, ProcessingSpec, WorkflowExecution, ExecutionPlan
+    WorkflowStatus, WorkflowType, WorkflowStep, ProcessingSpec, WorkflowExecution, ExecutionPlan,
+    WorkflowProfile
 )
 
 # Reasoning specs
@@ -42,7 +43,7 @@ from .reasoning_specs import ReasoningContext
 from .agent_specs import (
     AgentCapability, PluginStatus,
     AgentMetadata, AgentConfig, AgentResponse, PluginInfo,
-    AgentExecutionSpec,
+    AgentExecutionSpec, MessageIntent, AgentMessage,
     IAgent, IConversationalAgent, ISafetyAwareAgent, IStreamingAgent, IAgentPlugin
 )
 
@@ -71,6 +72,7 @@ __all__ = [
     
     # Workflow
     "WorkflowStatus", "WorkflowType", "WorkflowStep", "ProcessingSpec", "WorkflowExecution", "ExecutionPlan",
+    "WorkflowProfile",
     
     # Reasoning
     "ReasoningContext",
@@ -78,7 +80,7 @@ __all__ = [
     # Agent
     "AgentCapability", "PluginStatus",
     "AgentMetadata", "AgentConfig", "AgentResponse", "PluginInfo",
-    "AgentExecutionSpec",
+    "AgentExecutionSpec", "MessageIntent", "AgentMessage",
     "IAgent", "IConversationalAgent", "ISafetyAwareAgent", "IStreamingAgent", "IAgentPlugin",
 ]
 

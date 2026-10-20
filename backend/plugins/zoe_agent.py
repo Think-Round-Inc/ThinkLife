@@ -177,7 +177,12 @@ class ZoeAgent(IAgent):
                 return AgentResponse(
                     success=False,
                     content=fallback,
-                    metadata={"error": cortex_res.get("content"), "agent": "zoe"},
+                    metadata={
+                        **cortex_res.get("metadata", {}),  # workflow steps, failures, escalation reason
+                        "error": cortex_res.get("content"),
+                        "agent": "zoe",
+                        "execution_id": cortex_res.get("execution_id"),
+                    },
                     processing_time=time.time() - start_time,
                     session_id=session_id
                 )

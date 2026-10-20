@@ -10,9 +10,10 @@ from dotenv import load_dotenv
 
 from ..specs import (
     BrainRequest, BrainConfig, BrainAnalytics, WorkflowExecution, 
-    AgentExecutionSpec, ExecutionPlan, IAgent
+    AgentExecutionSpec, ExecutionPlan, IAgent, AgentMessage, AgentResponse
 )
 from .workflow_engine import WorkflowEngine, get_workflow_engine
+from .agent_router import get_agent_router
 from .reasoning_engine import ReasoningEngine, get_reasoning_engine
 from ..data_sources import get_data_source_registry
 from ..tools import get_tool_registry
@@ -463,7 +464,43 @@ class CortexFlow:
         request: BrainRequest
     ) -> Dict[str, Any]:
         return await self.execute_plan(plan, request, None)
-    
+
+    @observe(name="cortex_resume_execution")
+    async def resume_execution(
+        self,
+        execution_id: str,
+        agent_specs: AgentExecutionSpec,
+        request: BrainRequest
+    ) -> Dict[str, Any]:
+        """
+        Resume an interrupted workflow from its last checkpoint (US 1.1).
+        The original specs and request are passed again because they are
+        runtime context, not checkpointed state.
+        """
+        await self._ensure_initialized()
+        plan = ExecutionPlan(
+            original_specs=agent_specs,
+            optimized_specs=agent_specs,
+            reasoning_applied=False,
+            confidence=1.0,
+            reasoning_notes={"strategy": "resume"},
+        )
+        result = await self.workflow_engine.resume_execution(execution_id, plan, request)
+        result["execution_plan"] = plan.to_dict()
+        return result
+
+    async def dispatch_agent_message(self, message: AgentMessage, user_context: Any) -> AgentResponse:
+        """
+        Deliver a message from one agent to another (US 1.1 communication
+        pattern). Agents never call each other directly; see agent_router.py.
+        """
+        return await get_agent_router().dispatch(message, user_context)
+
+    async def get_execution(self, execution_id: str) -> Optional[Dict[str, Any]]:
+        """Summary of a recent workflow run (no message content)."""
+        await self._ensure_initialized()
+        return await self.workflow_engine.get_execution(execution_id)
+
     async def shutdown(self):
         logger.info("Shutting down CortexFlow...")
         try:

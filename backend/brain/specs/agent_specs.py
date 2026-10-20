@@ -2,6 +2,7 @@
 Agent specifications, interfaces, and types
 """
 
+import uuid
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any, AsyncGenerator
 from dataclasses import dataclass, field
@@ -102,6 +103,52 @@ class AgentExecutionSpec:
             "tools": [tool.to_dict() if hasattr(tool, 'to_dict') else tool for tool in self.tools],
             "processing": self.processing.to_dict() if hasattr(self.processing, 'to_dict') else self.processing,
             "agent_metadata": self.agent_metadata
+        }
+
+
+class MessageIntent(str, Enum):
+    """Why one agent is sending another a message (US 1.1 communication pattern)."""
+    HANDOFF = "handoff"        # recipient takes over answering the user
+    QUERY = "query"            # sender wants an answer back, keeps the conversation
+    NOTIFY = "notify"          # fire-and-forget event, no reply expected
+
+
+@dataclass
+class AgentMessage:
+    """
+    The only way agents talk to each other (see docs/workflows/ADR-001).
+
+    Agents never call each other directly and never read each other's
+    workflow state. An agent that needs another agent returns an
+    AgentMessage; CortexFlow's AgentRouter delivers it by starting the
+    recipient's own workflow run. `correlation_id` ties every hop together
+    in logs and Langfuse traces.
+    """
+    sender: str
+    recipient: str
+    intent: MessageIntent
+    payload: Dict[str, Any] = field(default_factory=dict)  # must include "message" for HANDOFF/QUERY
+    correlation_id: Optional[str] = None
+    message_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    hop: int = 0  # incremented on every delivery; the router refuses loops past its limit
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if isinstance(self.intent, str) and not isinstance(self.intent, MessageIntent):
+            self.intent = MessageIntent(self.intent)
+        if not self.correlation_id:
+            self.correlation_id = self.message_id
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "message_id": self.message_id,
+            "sender": self.sender,
+            "recipient": self.recipient,
+            "intent": self.intent.value,
+            "payload": self.payload,
+            "correlation_id": self.correlation_id,
+            "hop": self.hop,
+            "created_at": self.created_at.isoformat(),
         }
 
 
