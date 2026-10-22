@@ -42,10 +42,10 @@ def test_diagram_shows_every_node_and_failure_route(rendered):
     for name, value in vars(we).items():
         if name.startswith("NODE_"):
             assert f"{value}[{value}]" in diagram, f"{value} missing from diagram"
-    for node, targets in we.ERROR_ROUTES.items():
-        for target in targets:
-            assert f"{node}_error -.-> {target}" in diagram
-    # Routes out of fallback_provider (reached only through the error handler)
+    # Every failure route out of call_provider and fallback_provider is drawn
+    assert "call_provider -. answered .-> check_safety" in diagram
+    assert "call_provider -. still failing, try fallback model .-> fallback_provider" in diagram
+    assert "call_provider -. still failing, none left .-> escalate" in diagram
     assert "fallback_provider -. recovered .-> check_safety" in diagram
     assert "fallback_provider -. escalate .-> escalate" in diagram
     assert f"v{we.WORKFLOW_VERSION}" in diagram

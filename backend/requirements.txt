@@ -6,9 +6,10 @@ openai
 langchain
 langchain-openai
 langchain-chroma
-langgraph>=1.2,<2
+langgraph>=0.6,<2
 langgraph-checkpoint-sqlite
-aiosqlite
+aiosqlite<0.22; python_version < "3.10"  # the Python 3.9 SQLite checkpoint saver needs Connection.is_alive
+aiosqlite; python_version >= "3.10"
 chromadb
 python-multipart
 anthropic

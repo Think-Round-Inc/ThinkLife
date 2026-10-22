@@ -171,7 +171,7 @@ class WorkflowProfile:
     data_source_retry_attempts: int = 2
     retry_initial_interval: float = 1.0
     retry_max_interval: float = 10.0
-    retry_jitter: bool = True  # LangGraph adds up to 1 s of random delay per retry
+    retry_jitter: bool = True  # adds up to 25% random delay per retry
 
     # Output policy checks (brain/guardrails/policy_validator.py)
     safety_checks: bool = True
@@ -179,16 +179,6 @@ class WorkflowProfile:
     # Tried in order, once each, when the primary provider is still failing
     # after its retries. Items are ProviderSpec objects.
     fallback_providers: List[Any] = field(default_factory=list)
-
-    def graph_key(self) -> tuple:
-        """Settings baked into the compiled graph (retry policy, node timeout)."""
-        return (
-            self.provider_retry_attempts,
-            self.retry_initial_interval,
-            self.retry_max_interval,
-            self.retry_jitter,
-            self.provider_timeout_seconds,
-        )
 
     def to_dict(self) -> Dict[str, Any]:
         return {

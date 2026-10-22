@@ -19,10 +19,8 @@ flowchart TD
     validate_response[validate_response]
     escalate[escalate]
     finalize[finalize]
-    call_provider_error{{call_provider error handler}}
     wf_start --> initialize
     build_messages --> call_provider
-    call_provider --> check_safety
     escalate --> finalize
     execute_tools --> gather_context
     finalize --> wf_end
@@ -31,6 +29,9 @@ flowchart TD
     initialize -. in parallel .-> query_data_sources
     initialize -. in parallel .-> execute_tools
     initialize -. no data sources or tools .-> gather_context
+    call_provider -. answered .-> check_safety
+    call_provider -. still failing, try fallback model .-> fallback_provider
+    call_provider -. still failing, none left .-> escalate
     fallback_provider -. recovered .-> check_safety
     fallback_provider -. escalate .-> escalate
     check_safety -. passed .-> validate_response
@@ -38,9 +39,6 @@ flowchart TD
     validate_response -. retry .-> build_messages
     validate_response -. finalize .-> finalize
     validate_response -. escalate .-> escalate
-    call_provider -. fails after retries .-> call_provider_error
-    call_provider_error -.-> fallback_provider
-    call_provider_error -.-> escalate
     classDef added stroke-dasharray: 5 4
     class gather_context,fallback_provider,check_safety,escalate added
 ```

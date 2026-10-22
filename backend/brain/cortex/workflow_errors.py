@@ -4,7 +4,7 @@ Workflow error taxonomy (US 1.1 - failure handling transitions)
 Every failure inside the workflow is turned into one of these types so the
 graph can pick a path for it:
 
-    TransientProviderError   -> retried with backoff (RetryPolicy on call_provider)
+    TransientProviderError   -> retried with exponential backoff inside call_provider
     ProviderUnavailableError -> no retry; fallback provider, else escalate
     ProviderCallError        -> no retry; fallback provider, else escalate
     PolicyBlockedError       -> never retried; escalate with the policy's message
@@ -91,10 +91,9 @@ def classify_provider_error(error_text: str, *, provider: Optional[str] = None,
 
 def is_retryable(exc: BaseException) -> bool:
     """
-    retry_on predicate for LangGraph's RetryPolicy.
-
-    LangGraph's default predicate only retries network-style exceptions, so a
-    plain RuntimeError would never be retried; this makes the rule explicit.
+    Which exceptions the workflow's retry loops retry: transient provider
+    errors, timeouts and dropped connections. A plain RuntimeError (a bug)
+    is never retried.
     """
     try:
         from langgraph.errors import NodeTimeoutError

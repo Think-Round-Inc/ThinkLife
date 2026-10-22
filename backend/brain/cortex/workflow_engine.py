@@ -14,7 +14,7 @@ its limits, fallback providers and safety checks.
 
 Failure handling (see docs/workflows/README.md for the full table):
   * transient provider errors (timeout, 429, 5xx, connection) are retried with
-    exponential backoff by LangGraph's RetryPolicy on call_provider
+    exponential backoff inside call_provider
   * a provider still failing after retries goes to fallback_provider, which
     tries each fallback model in the profile once
   * a policy block from check_safety is never retried
@@ -27,6 +27,9 @@ Checkpointing: the graph is compiled with a checkpointer (SQLite by default,
 see workflow_checkpoint.py) and thread_id = execution_id, so an interrupted
 run can be resumed with resume_execution().
 
+Compatibility: uses only LangGraph features present in both 0.6 (what
+Python 3.9 installs) and 1.x, so it runs on Python 3.9 through 3.13.
+
 Only plain, serialisable data lives in WorkflowState. The live request and
 agent specs travel in LangGraph's runtime context (WorkflowContext), which is
 not checkpointed.
@@ -36,6 +39,7 @@ import asyncio
 import logging
 import operator
 import os
+import random
 import re
 import time
 import uuid
@@ -43,10 +47,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Annotated, Dict, List, Optional, TypedDict
 
-from langgraph.errors import NodeError
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-from langgraph.types import Command, RetryPolicy
 
 from ..specs import WorkflowProfile, WorkflowStatus
 from .workflow_checkpoint import create_checkpointer, keep_completed_checkpoints
@@ -90,11 +92,10 @@ NODE_VALIDATE_RESPONSE = "validate_response"
 NODE_ESCALATE = "escalate"
 NODE_FINALIZE = "finalize"
 
-# Routes taken by error handlers (via Command(goto=...)). LangGraph cannot
-# see these when it draws the graph, so the diagram exporter adds them from here.
-ERROR_ROUTES: Dict[str, tuple] = {
-    NODE_CALL_PROVIDER: (NODE_FALLBACK_PROVIDER, NODE_ESCALATE),
-}
+# Routes out of call_provider
+PROVIDER_ANSWERED = "answered"
+PROVIDER_FALLBACK = "fallback"
+PROVIDER_ESCALATE = "escalate"
 
 # Why a run was escalated
 ESCALATION_PROVIDER_FAILURE = "provider_failure"
@@ -137,6 +138,7 @@ class WorkflowState(TypedDict, total=False):
     llm_response: Optional[Dict[str, Any]]
     final_content: Optional[str]
     provider_used: Optional[str]
+    provider_route: Optional[str]  # answered | fallback | escalate, set by call_provider
 
     # Metadata
     errors: Annotated[List[str], operator.add]
@@ -203,14 +205,17 @@ class WorkflowEngine:
     # Graph construction
     # ------------------------------------------------------------------ #
 
-    def get_graph(self, profile: WorkflowProfile):
-        """Compiled graph for this profile's retry/timeout settings (cached)."""
-        key = profile.graph_key()
-        if key not in self._graphs:
-            self._graphs[key] = self._build_graph(profile)
-        return self._graphs[key]
+    def get_graph(self, profile: Optional[WorkflowProfile] = None):
+        """
+        The compiled graph (built once). The graph is the same for every agent;
+        per-agent settings are read from the profile in runtime context.
+        `profile` is accepted for callers that pass one.
+        """
+        if "default" not in self._graphs:
+            self._graphs["default"] = self._build_graph()
+        return self._graphs["default"]
 
-    def _build_graph(self, profile: WorkflowProfile):
+    def _build_graph(self):
         workflow = StateGraph(WorkflowState, context_schema=WorkflowContext)
 
         workflow.add_node(NODE_INITIALIZE, self._initialize_node)
@@ -218,20 +223,7 @@ class WorkflowEngine:
         workflow.add_node(NODE_EXECUTE_TOOLS, self._execute_tools_node)
         workflow.add_node(NODE_GATHER_CONTEXT, self._gather_context_node)
         workflow.add_node(NODE_BUILD_MESSAGES, self._build_messages_node)
-        workflow.add_node(
-            NODE_CALL_PROVIDER,
-            self._call_provider_node,
-            retry_policy=RetryPolicy(
-                max_attempts=max(1, profile.provider_retry_attempts),
-                initial_interval=profile.retry_initial_interval,
-                max_interval=profile.retry_max_interval,
-                backoff_factor=2.0,
-                jitter=profile.retry_jitter,
-                retry_on=is_retryable,
-            ),
-            timeout=profile.provider_timeout_seconds,
-            error_handler=self._call_provider_error_handler,
-        )
+        workflow.add_node(NODE_CALL_PROVIDER, self._call_provider_node)
         workflow.add_node(NODE_FALLBACK_PROVIDER, self._fallback_provider_node)
         workflow.add_node(NODE_CHECK_SAFETY, self._check_safety_node)
         workflow.add_node(NODE_VALIDATE_RESPONSE, self._validate_response_node)
@@ -252,9 +244,14 @@ class WorkflowEngine:
         workflow.add_edge(NODE_GATHER_CONTEXT, NODE_BUILD_MESSAGES)
         workflow.add_edge(NODE_BUILD_MESSAGES, NODE_CALL_PROVIDER)
 
-        # call_provider: success goes on to safety; failures are routed by its
-        # error handler (ERROR_ROUTES) to fallback_provider or escalate.
-        workflow.add_edge(NODE_CALL_PROVIDER, NODE_CHECK_SAFETY)
+        # call_provider retries transient errors itself; if it still fails it
+        # routes to a fallback model, or escalates when none is left.
+        workflow.add_conditional_edges(
+            NODE_CALL_PROVIDER,
+            self._route_after_provider,
+            {PROVIDER_ANSWERED: NODE_CHECK_SAFETY, PROVIDER_FALLBACK: NODE_FALLBACK_PROVIDER,
+             PROVIDER_ESCALATE: NODE_ESCALATE},
+        )
 
         workflow.add_conditional_edges(
             NODE_FALLBACK_PROVIDER,
@@ -306,6 +303,7 @@ class WorkflowEngine:
             "llm_response": None,
             "final_content": None,
             "provider_used": None,
+            "provider_route": None,
             "errors": [],
             "execution_steps": [],
             "status": WorkflowStatus.RUNNING.value,
@@ -544,10 +542,9 @@ class WorkflowEngine:
     @observe(name="workflow_node_query_data_sources")
     async def _query_data_sources_node(self, state: WorkflowState, runtime: Runtime[WorkflowContext]) -> Dict[str, Any]:
         """
-        Queries each enabled data source. Transient errors are retried here
-        (not with a graph RetryPolicy: this node runs in parallel with
-        execute_tools, where LangGraph error handlers are not safe). A source
-        that still fails is recorded and the run continues without its context.
+        Queries each enabled data source, retrying transient errors with the
+        same backoff as call_provider. A source that still fails is recorded
+        and the run continues without its context.
         """
         request, specs, profile = runtime.context.request, runtime.context.specs, runtime.context.profile
         results: List[Dict[str, Any]] = []
@@ -691,23 +688,46 @@ class WorkflowEngine:
     @observe(name="workflow_node_call_provider", as_type="generation")
     async def _call_provider_node(self, state: WorkflowState, runtime: Runtime[WorkflowContext]) -> Dict[str, Any]:
         """
-        One LLM call. Raises on failure so the RetryPolicy (transient errors)
-        and the error handler (everything else) can take over.
+        One LLM answer. Transient errors (timeout, 429, 5xx, dropped connection,
+        empty reply) are retried with exponential backoff, up to
+        profile.provider_retry_attempts and never past the run's time budget.
+        If it still fails, the route is set to a fallback model or escalation.
         """
+        profile = runtime.context.profile
         spec = self._active_provider_spec(state, runtime.context)
         if spec is None:
-            raise ProviderUnavailableError("No provider specified")
-        response = await self._invoke_provider(spec, state.get("messages") or [])
+            return self._provider_failure(state, ProviderUnavailableError("No provider specified"))
+        label = f"{spec.provider_type}:{spec.model}"
+
+        async def one_attempt():
+            try:
+                return await asyncio.wait_for(
+                    self._invoke_provider(spec, state.get("messages") or []),
+                    timeout=profile.provider_timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                raise TransientProviderError(
+                    f"{label} timed out after {profile.provider_timeout_seconds:g}s",
+                    provider=spec.provider_type, model=spec.model,
+                )
+
+        try:
+            response = await self._retry_transient(
+                one_attempt, attempts=profile.provider_retry_attempts, profile=profile, deadline=state.get("deadline")
+            )
+        except Exception as exc:  # retries spent, not retryable, or a bug in a provider
+            return self._provider_failure(state, exc)
+
         return {
             "execution_steps": [NODE_CALL_PROVIDER],
             "llm_response": response,
             "final_content": response.get("content", ""),
-            "provider_used": f"{spec.provider_type}:{spec.model}",
+            "provider_used": label,
+            "provider_route": PROVIDER_ANSWERED,
         }
 
-    async def _call_provider_error_handler(self, state: WorkflowState, error: NodeError) -> Command:
-        """call_provider failed for good (retries spent, or not retryable)."""
-        exc = error.error
+    def _provider_failure(self, state: WorkflowState, exc: BaseException) -> Dict[str, Any]:
+        """call_provider failed for good: go to the next fallback model, or escalate."""
         kind = failure_kind(exc)
         logger.warning("call_provider failed (%s): %s", kind, exc)
         update: Dict[str, Any] = {
@@ -717,12 +737,11 @@ class WorkflowEngine:
         }
         next_fallback = (state.get("active_fallback") if state.get("active_fallback") is not None else -1) + 1
         if next_fallback < state.get("fallbacks_available", 0) and not _deadline_passed(state):
-            goto = NODE_FALLBACK_PROVIDER
+            update["provider_route"] = PROVIDER_FALLBACK
         else:
+            update["provider_route"] = PROVIDER_ESCALATE
             update["escalation_reason"] = ESCALATION_TIMEOUT if _deadline_passed(state) else ESCALATION_PROVIDER_FAILURE
-            goto = NODE_ESCALATE
-        assert goto in ERROR_ROUTES[NODE_CALL_PROVIDER], "update ERROR_ROUTES when adding a handler route"
-        return Command(update=update, goto=goto)
+        return update
 
     @observe(name="workflow_node_fallback_provider", as_type="generation")
     async def _fallback_provider_node(self, state: WorkflowState, runtime: Runtime[WorkflowContext]) -> Dict[str, Any]:
@@ -958,6 +977,9 @@ If score >= 75, the response is acceptable. Below 75, it needs improvement."""
             branches.append(NODE_EXECUTE_TOOLS)
         return branches or [NODE_GATHER_CONTEXT]
 
+    def _route_after_provider(self, state: WorkflowState) -> str:
+        return state.get("provider_route") or PROVIDER_ESCALATE
+
     def _route_after_fallback(self, state: WorkflowState) -> str:
         return "escalate" if state.get("escalation_reason") else "recovered"
 
@@ -1038,7 +1060,13 @@ If score >= 75, the response is acceptable. Below 75, it needs improvement."""
             raise TransientProviderError(f"Empty response from {label}", provider=p_type, model=spec.model)
         return response
 
-    async def _retry_transient(self, fn, attempts: int, profile: WorkflowProfile):
+    async def _retry_transient(self, fn, attempts: int, profile: WorkflowProfile,
+                               deadline: Optional[float] = None):
+        """
+        Call `fn` up to `attempts` times, retrying only transient errors, with
+        exponential backoff (initial_interval, doubling, capped at
+        max_interval, plus up to 25% jitter). No retry starts after `deadline`.
+        """
         delay = profile.retry_initial_interval
         for attempt in range(1, max(1, attempts) + 1):
             try:
@@ -1046,8 +1074,13 @@ If score >= 75, the response is acceptable. Below 75, it needs improvement."""
             except Exception as e:
                 if attempt >= attempts or not is_retryable(e):
                     raise
-                logger.info("Transient error (attempt %d/%d), retrying in %.1fs: %s", attempt, attempts, delay, e)
-                await asyncio.sleep(min(delay, profile.retry_max_interval))
+                wait = min(delay, profile.retry_max_interval)
+                if profile.retry_jitter:
+                    wait += random.uniform(0, wait * 0.25)
+                if deadline and time.time() + wait >= deadline:
+                    raise
+                logger.info("Transient error (attempt %d/%d), retrying in %.2fs: %s", attempt, attempts, wait, e)
+                await asyncio.sleep(wait)
                 delay *= 2
 
     def _get_policy_validator(self):
@@ -1160,10 +1193,8 @@ def describe_graph_mermaid(engine: WorkflowEngine, profile: Optional[WorkflowPro
     """
     Mermaid source for the workflow, generated from the graph definition
     itself (US 1.1 release traceability), so the diagram cannot drift from
-    the code. Built from the StateGraph's edges and branches rather than
-    LangGraph's own renderer, which drops edges out of nodes reached only
-    through an error handler (fallback_provider). Error-handler routes come
-    from ERROR_ROUTES.
+    the code. Built from the StateGraph's own edges and branches; this
+    output is the same on LangGraph 0.6 and 1.x, unlike LangGraph's renderer.
 
     Solid arrow = always; dotted arrow = conditional, labelled with the route.
     """
@@ -1179,11 +1210,7 @@ def describe_graph_mermaid(engine: WorkflowEngine, profile: Optional[WorkflowPro
         "    wf_end([end])",
     ]
     for name in builder.nodes:
-        if name.startswith("__error_handler__"):
-            continue
         lines.append(f"    {name}[{name}]")
-    for node in ERROR_ROUTES:
-        lines.append(f"    {node}_error{{{{{node} error handler}}}}")
 
     edges = []
     for src, dst in sorted(builder.edges):
@@ -1194,11 +1221,9 @@ def describe_graph_mermaid(engine: WorkflowEngine, profile: Optional[WorkflowPro
                 text = label
                 if src == NODE_INITIALIZE:
                     text = "no data sources or tools" if dst == NODE_GATHER_CONTEXT else "in parallel"
+                elif src == NODE_CALL_PROVIDER and label != PROVIDER_ANSWERED:
+                    text = "still failing, " + ("try fallback model" if label == PROVIDER_FALLBACK else "none left")
                 edges.append(f"    {node_id(src)} -. {text} .-> {node_id(dst)}")
-    for node, targets in ERROR_ROUTES.items():
-        edges.append(f"    {node} -. fails after retries .-> {node}_error")
-        for target in targets:
-            edges.append(f"    {node}_error -.-> {target}")
     lines.extend(sorted(set(edges), key=edges.index))
 
     new_nodes = (NODE_GATHER_CONTEXT, NODE_FALLBACK_PROVIDER, NODE_CHECK_SAFETY, NODE_ESCALATE)

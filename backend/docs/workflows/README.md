@@ -15,6 +15,10 @@ cd backend
 python scripts/export_workflow_diagrams.py
 ```
 
+## Requirements
+
+Runs on Python 3.9 through 3.13. On Python 3.9, pip installs LangGraph 0.6; on 3.10 and later, LangGraph 1.x. The workflow only uses features both versions have, and the tests pass on both (`requirements.txt` pins `aiosqlite<0.22` on 3.9, which the 3.9 SQLite checkpoint store needs).
+
 ## Nodes
 
 | Node | What it does | Added in US 1.1 |
@@ -24,7 +28,7 @@ python scripts/export_workflow_diagrams.py
 | `execute_tools` | Runs the agent's tools (still a placeholder in the Brain); runs **in parallel** with `query_data_sources` | |
 | `gather_context` | Join point after the parallel branches; prepares retrieved text for the groundedness check | yes |
 | `build_messages` | Builds the prompt; on a retry it adds the validator's feedback (also on the agent-prompt path Zoe uses, which ignored feedback before) | |
-| `call_provider` | One LLM call. Retried with exponential backoff on transient errors; per-attempt timeout; error handler routes failures | |
+| `call_provider` | One LLM answer. Retries transient errors with exponential backoff and a per-attempt timeout; if it still fails, routes to `fallback_provider` or `escalate` | |
 | `fallback_provider` | Tries each fallback model in the profile once, then escalates | yes |
 | `check_safety` | Runs `PolicyValidator` (`brain/guardrails/policy_validator.py`) on the answer; a BLOCK escalates | yes |
 | `validate_response` | Rule checks, then an optional LLM judge; accept, retry with feedback, or escalate | |
@@ -37,9 +41,9 @@ Every failure ends in a retry, a fallback, or an escalation — never in error t
 
 | Failure | Caught in | Path | `success` | User sees |
 | --- | --- | --- | --- | --- |
-| Timeout, 429, 5xx, dropped connection, empty completion | `call_provider` | `RetryPolicy`: exponential backoff, up to `provider_retry_attempts` | true | Normal answer, a little slower |
-| Provider still failing, or can't start (missing key, bad model) | `call_provider` error handler | `fallback_provider` tries each fallback model once | true | Answer from the fallback model |
-| Fallback fails too, or no fallback configured | `fallback_provider` / error handler | `escalate` (`provider_failure`) | **false** | The agent's own fallback (Zoe's), as before |
+| Timeout, 429, 5xx, dropped connection, empty completion | `call_provider` | Retried with exponential backoff, up to `provider_retry_attempts` | true | Normal answer, a little slower |
+| Provider still failing, or can't start (missing key, bad model) | `call_provider` | `fallback_provider` tries each fallback model once | true | Answer from the fallback model |
+| Fallback fails too, or no fallback configured | `fallback_provider` / `call_provider` | `escalate` (`provider_failure`) | **false** | The agent's own fallback (Zoe's), as before |
 | Non-retryable provider error (401, 400, billing quota) | `call_provider` | No retry; fallback, else `escalate` | false | The agent's own fallback |
 | Policy BLOCK (leaked key, SSN pattern, empty/degenerate output) | `check_safety` | `escalate` (`policy_block`), never retried | true | The policy's message from `fallback_handler.py` |
 | Weak answer (score below 0.75) | `validate_response` | Back to `build_messages` with feedback, up to `max_iterations` | true | Improved answer |
@@ -95,7 +99,7 @@ Every workflow response's `metadata` now includes:
 
 ## Changing the workflow
 
-1. Edit `brain/cortex/workflow_engine.py`. Use the `NODE_*` constants; if an error handler gains a route, add it to `ERROR_ROUTES`.
+1. Edit `brain/cortex/workflow_engine.py`. Use the `NODE_*` constants and route with conditional edges (not exceptions), so the diagram picks every route up.
 2. Bump `WORKFLOW_VERSION` and add a line to the changelog below.
 3. Run `python scripts/export_workflow_diagrams.py` and commit the regenerated files.
 4. Run `pytest tests` from `backend/`.
