@@ -58,6 +58,7 @@ from evaluators.common_evaluators import (
     SafetyHarmEvaluator,
     FactualityHallucinationRiskEvaluator,
     InstructionFollowingRelevanceEvaluator,
+    AccuracyEvaluator,
     EmpathyToneEvaluator,
     ReadabilityLengthEvaluator,
 )
@@ -75,32 +76,40 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Evaluator registries
+#
+# Built as factories (not module-level instances) so the judge provider
+# (EVAL_JUDGE_PROVIDER, set from --judge before this is called) is picked up
+# fresh for each run rather than baked in at import time.
 # ---------------------------------------------------------------------------
 
-COMMON_EVALUATORS = [
-    SafetyHarmEvaluator(),
-    FactualityHallucinationRiskEvaluator(),
-    InstructionFollowingRelevanceEvaluator(),
-    EmpathyToneEvaluator(),
-    ReadabilityLengthEvaluator(),
-]
+def _common_evaluators() -> List:
+    return [
+        SafetyHarmEvaluator(),
+        FactualityHallucinationRiskEvaluator(),
+        InstructionFollowingRelevanceEvaluator(),
+        AccuracyEvaluator(),
+        EmpathyToneEvaluator(),
+        ReadabilityLengthEvaluator(),
+    ]
 
-FAQ_ONLY_EVALUATORS = [
-    RetrievalPrecisionRecallEvaluator(),
-    AnswerFaithfulnessEvaluator(),
-    CitationEvaluator(),
-    FAQExactnessEvaluator(),
-    AbstentionEvaluator(),
-    PolicyConsistencyEvaluator(),
-]
+
+def _faq_only_evaluators() -> List:
+    return [
+        RetrievalPrecisionRecallEvaluator(),
+        AnswerFaithfulnessEvaluator(),
+        CitationEvaluator(),
+        FAQExactnessEvaluator(),
+        AbstentionEvaluator(),
+        PolicyConsistencyEvaluator(),
+    ]
 
 
 def get_evaluators_for_bot(bot_type: str) -> List:
     """Return the list of evaluators appropriate for the given bot type."""
     if bot_type == "zoe":
-        return COMMON_EVALUATORS
+        return _common_evaluators()
     elif bot_type == "faq":
-        return COMMON_EVALUATORS + FAQ_ONLY_EVALUATORS
+        return _common_evaluators() + _faq_only_evaluators()
     else:
         raise ValueError(f"Unknown bot type: {bot_type!r}. Use 'zoe' or 'faq'.")
 
@@ -312,14 +321,22 @@ def build_output_dict(
     bot_type: str,
     all_case_results: List[Tuple[str, List[EvaluationResult]]],
     test_cases: List[Dict[str, Any]],
+    release: Optional[str] = None,
+    judge_provider: Optional[str] = None,
+    judge_model: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build a serializable results dict for --output."""
+    category_by_case = {tc.get("id"): (tc.get("metadata") or {}).get("category") for tc in test_cases}
+
     evaluator_stats: Dict[str, Dict] = {}
+    category_stats: Dict[str, Dict] = {}
     results_by_case = []
 
     for case_id, results in all_case_results:
+        category = category_by_case.get(case_id)
         case_dict = {
             "case_id": case_id,
+            "category": category,
             "results": [r.to_dict() for r in results],
         }
         results_by_case.append(case_dict)
@@ -333,7 +350,21 @@ def build_output_dict(
             if r.passed:
                 evaluator_stats[name]["passed"] += 1
 
+            if category:
+                cat_key = f"{category}::{name}"
+                if cat_key not in category_stats:
+                    category_stats[cat_key] = {"category": category, "evaluator": name, "passed": 0, "total": 0, "score_sum": 0.0}
+                category_stats[cat_key]["total"] += 1
+                category_stats[cat_key]["score_sum"] += r.score
+                if r.passed:
+                    category_stats[cat_key]["passed"] += 1
+
     for name, stats in evaluator_stats.items():
+        total = stats["total"]
+        stats["avg_score"] = round(stats["score_sum"] / total, 3) if total > 0 else 0.0
+        stats["pass_rate"] = round(stats["passed"] / total, 3) if total > 0 else 0.0
+
+    for stats in category_stats.values():
         total = stats["total"]
         stats["avg_score"] = round(stats["score_sum"] / total, 3) if total > 0 else 0.0
         stats["pass_rate"] = round(stats["passed"] / total, 3) if total > 0 else 0.0
@@ -344,6 +375,9 @@ def build_output_dict(
     return {
         "meta": {
             "bot_type": bot_type,
+            "release": release,
+            "judge_provider": judge_provider,
+            "judge_model": judge_model,
             "run_at": datetime.now().isoformat(),
             "total_cases": len(all_case_results),
             "total_checks": total_checks,
@@ -351,6 +385,7 @@ def build_output_dict(
             "overall_pass_rate": round(total_passed / total_checks, 3) if total_checks > 0 else 0.0,
         },
         "by_evaluator": evaluator_stats,
+        "by_category": list(category_stats.values()),
         "by_case": results_by_case,
     }
 
@@ -390,21 +425,54 @@ def parse_args() -> argparse.Namespace:
             "Requires all bot dependencies to be available."
         ),
     )
+    parser.add_argument(
+        "--judge",
+        choices=["openai", "gemini", "ollama"],
+        default=None,
+        help="Override EVAL_JUDGE_PROVIDER for this run (openai|gemini|ollama).",
+    )
+    parser.add_argument(
+        "--judge-model",
+        default=None,
+        help="Override EVAL_JUDGE_MODEL for this run.",
+    )
+    parser.add_argument(
+        "--release",
+        default=None,
+        help="Release label to stamp into the output JSON's meta (for compare.py / baseline tracking).",
+    )
     return parser.parse_args()
 
 
-def check_api_key() -> None:
-    """Warn if OPENAI_API_KEY is not set (LLM-based evaluators will fail)."""
-    if not os.getenv("OPENAI_API_KEY"):
+def check_judge_credentials(judge_provider: str) -> None:
+    """Warn if the configured judge provider's credentials are missing."""
+    if judge_provider == "openai" and not os.getenv("OPENAI_API_KEY"):
         print(
             "\n[WARNING] OPENAI_API_KEY is not set. LLM-based evaluators will fail.\n"
-            "  Set it in your .env file or environment before running.\n"
+            "  Set it in your .env file or environment, or pass --judge gemini/ollama.\n"
+        )
+    elif judge_provider == "gemini" and not os.getenv("GEMINI_API_KEY"):
+        print(
+            "\n[WARNING] GEMINI_API_KEY is not set. LLM-based evaluators will fail.\n"
+            "  Free tier: https://aistudio.google.com/apikey\n"
+        )
+    elif judge_provider == "ollama":
+        print(
+            f"\n[INFO] Using local Ollama judge at {os.getenv('OLLAMA_HOST', 'http://localhost:11434')} "
+            f"-- ensure `ollama serve` is running and the model is pulled.\n"
         )
 
 
 def main() -> None:
     args = parse_args()
-    check_api_key()
+
+    if args.judge:
+        os.environ["EVAL_JUDGE_PROVIDER"] = args.judge
+    if args.judge_model:
+        os.environ["EVAL_JUDGE_MODEL"] = args.judge_model
+
+    judge_provider = os.getenv("EVAL_JUDGE_PROVIDER", "openai")
+    check_judge_credentials(judge_provider)
 
     # Load test cases
     raw_cases = load_test_cases(args.input, args.bot)
@@ -463,7 +531,12 @@ def main() -> None:
 
     # Optionally save results
     if args.output:
-        output_data = build_output_dict(args.bot, all_case_results, raw_cases)
+        output_data = build_output_dict(
+            args.bot, all_case_results, raw_cases,
+            release=args.release,
+            judge_provider=judge_provider,
+            judge_model=os.getenv("EVAL_JUDGE_MODEL"),
+        )
         output_path = Path(args.output)
         with open(output_path, "w") as f:
             json.dump(output_data, f, indent=2)
