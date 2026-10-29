@@ -179,6 +179,13 @@ class BrainAnalytics:
     user_satisfaction: float = 0.0
     error_rate: float = 0.0
     uptime: float = 0.0
+
+    # Cost (Epic 4.1.2) -- only requests with a locally-priced model (see
+    # CostEstimator._MODEL_PRICING_PER_1M_TOKENS) contribute; unpriced-model
+    # requests are counted in total_requests but not in cost totals.
+    total_cost_usd: float = 0.0
+    average_cost_usd: float = 0.0
+    priced_requests: int = 0
     
     # Plugin system analytics
     active_plugins: int = 0

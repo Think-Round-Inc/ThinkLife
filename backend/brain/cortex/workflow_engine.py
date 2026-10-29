@@ -23,6 +23,16 @@ except ImportError:
         return decorator
 
 from ..specs import WorkflowStatus
+from evaluation import start_span, update_current_span, update_current_generation, score_current_trace, CostEstimator
+
+def _extract_usage_details(metadata: Dict[str, Any]) -> Optional[Dict[str, int]]:
+    usage = (metadata or {}).get("usage") or {}
+    details = {
+        k: usage[k]
+        for k in ("prompt_tokens", "completion_tokens", "total_tokens")
+        if isinstance(usage.get(k), int)
+    }
+    return details or None
 
 class WorkflowState(TypedDict):
     """State for LangGraph workflow"""
@@ -54,6 +64,14 @@ class WorkflowState(TypedDict):
     validation_feedback: Optional[str]
     is_validated: bool
     confidence_score: float
+
+    # Per-stage timing: stage_durations accumulates seconds across retries as the
+    # workflow runs; latency_ms is the final rounded-ms breakdown set in _finalize_node.
+    stage_durations: Dict[str, float]
+    latency_ms: Dict[str, float]
+
+    # Real $ cost, summed across retries (see CostEstimator.actual_cost, evaluation/estimators/)
+    total_cost_usd: float
 
 
 class WorkflowEngine:
@@ -162,7 +180,10 @@ class WorkflowEngine:
                 "max_validation_runs": 5,
                 "validation_feedback": None,
                 "is_validated": False,
-                "confidence_score": 0.0
+                "confidence_score": 0.0,
+                "stage_durations": {},
+                "latency_ms": {},
+                "total_cost_usd": 0.0
             }
             
             if self.graph:
@@ -201,7 +222,9 @@ class WorkflowEngine:
                     "errors": final_state["errors"],
                     "duration_seconds": (final_state["end_time"] or time.time()) - final_state["start_time"],
                     "confidence_score": final_state.get("confidence_score", 0.0),
-                    "validation_attempts": final_state.get("validation_attempts", 0)
+                    "validation_attempts": final_state.get("validation_attempts", 0),
+                    "latency_ms": final_state.get("latency_ms", {}),
+                    "actual_cost_usd": final_state.get("total_cost_usd", 0.0) or None
                 }
             }
             
@@ -267,10 +290,11 @@ class WorkflowEngine:
         state["execution_steps"].append("initialize")
         return state
     
-    @observe(name="workflow_node_query_data_sources")
+    @observe(name="workflow_node_query_data_sources", as_type="retriever", capture_input=False, capture_output=False)
     async def _query_data_sources_node(self, state: WorkflowState) -> WorkflowState:
         state["execution_steps"].append("query_data_sources")
-        
+        stage_t0 = time.perf_counter()
+
         try:
             from ..data_sources import get_data_source_registry, create_vector_data_source, DataSourceConfig
             from ..specs import DataSourceType
@@ -279,7 +303,8 @@ class WorkflowEngine:
             request = state["request"]
             specs = state["specs"]
             results = []
-            
+            query_texts = []
+
             for ds_spec in specs.data_sources:
                 if not ds_spec.enabled: continue
                 
@@ -299,8 +324,10 @@ class WorkflowEngine:
                             init_config = ds_spec.config or {}
                             
                             if await vector_source.initialize(init_config):
+                                query_text = ds_spec.query or request.message
+                                query_texts.append(query_text)
                                 query_res = await vector_source.query(
-                                    query=ds_spec.query or request.message,
+                                    query=query_text,
                                     context={"filter": ds_spec.config.get("filter")},
                                     k=ds_spec.limit or 5
                                 )
@@ -320,13 +347,22 @@ class WorkflowEngine:
                     state["errors"].append(f"DS Error: {str(e)}")
             
             state["data_source_results"] = results
-            
+
+            update_current_span(
+                input=query_texts[0] if len(query_texts) == 1 else query_texts,
+                output=results,
+                metadata={"data_source_count": len(specs.data_sources)},
+            )
+
         except Exception as e:
             logger.exception("Data source node error")
             state["errors"].append(str(e))
-        
+        finally:
+            durations = state.setdefault("stage_durations", {})
+            durations["retrieval"] = durations.get("retrieval", 0.0) + (time.perf_counter() - stage_t0)
+
         return state
-    
+
     @observe(name="workflow_node_execute_tools")
     async def _execute_tools_node(self, state: WorkflowState) -> WorkflowState:
         state["execution_steps"].append("execute_tools")
@@ -338,16 +374,20 @@ class WorkflowEngine:
             
             for tool in state["specs"].tools:
                 if not tool.enabled: continue
-                
-                if registry.check_tool_available(tool.name):
-                    # In a real implementation, we'd execute the tool here
-                    results.append({
-                        "tool": tool.name,
-                        "status": "executed",
-                        "result": "Tool execution placeholder" 
-                    })
-                else:
-                    results.append({"tool": tool.name, "error": "Not available"})
+
+                with start_span(f"tool.{tool.name}", as_type="tool", input={"tool": tool.name}) as span:
+                    if registry.check_tool_available(tool.name):
+                        # In a real implementation, we'd execute the tool here
+                        tool_result = {
+                            "tool": tool.name,
+                            "status": "executed",
+                            "result": "Tool execution placeholder"
+                        }
+                    else:
+                        tool_result = {"tool": tool.name, "error": "Not available"}
+                    if span is not None:
+                        span.update(output=tool_result)
+                    results.append(tool_result)
             
             state["tool_results"] = results
             
@@ -464,10 +504,17 @@ Please generate a better, more helpful, and complete response that addresses the
             for r in state["tool_results"]
         ])
 
-    @observe(name="workflow_node_call_provider", as_type="generation")
+    @observe(name="workflow_node_call_provider", as_type="generation", capture_input=False, capture_output=False)
     async def _call_provider_node(self, state: WorkflowState) -> WorkflowState:
+        # capture_input/capture_output are disabled above because @observe's default
+        # auto-capture would use this function's raw args/return value -- the full
+        # WorkflowState dict (messages, request, specs, ...) -- which is noisy and
+        # would clobber the more precise input/output set via update_current_generation
+        # below (auto-capture of the return value happens *after* this function body
+        # runs, so it would silently overwrite anything set mid-function).
         state["execution_steps"].append("call_provider")
-        
+        stage_t0 = time.perf_counter()
+
         try:
             from ..providers import create_provider
             
@@ -502,14 +549,38 @@ Please generate a better, more helpful, and complete response that addresses the
                 
                 response = await provider.generate_response(messages=state["messages"], **kwargs)
                 state["llm_response"] = response
-                
+
                 if response.get("success"):
                     state["final_content"] = response.get("content", "")
                 else:
                     err = response.get("metadata", {}).get("error", "Unknown provider error")
                     state["errors"].append(err)
                     state["final_content"] = f"Error: {err}"
-                    
+
+                # Attach model + real token usage to the generation span so Langfuse
+                # computes actual cost (requires model pricing configured server-side).
+                resp_metadata = response.get("metadata", {}) or {}
+                model_name = resp_metadata.get("model") or kwargs.get("model")
+                usage_details = _extract_usage_details(resp_metadata)
+                actual_cost_usd = CostEstimator.actual_cost(model_name, usage_details)
+                if actual_cost_usd is not None:
+                    state["total_cost_usd"] = state.get("total_cost_usd", 0.0) + actual_cost_usd
+
+                update_current_generation(
+                    model=model_name,
+                    input=state["messages"],
+                    output=response.get("content", ""),
+                    usage_details=usage_details,
+                    cost_details={"total": actual_cost_usd} if actual_cost_usd is not None else None,
+                    metadata={
+                        "provider": resp_metadata.get("provider", p_type),
+                        "finish_reason": resp_metadata.get("finish_reason"),
+                        "temperature": kwargs.get("temperature"),
+                        "max_tokens": kwargs.get("max_tokens"),
+                        "prompt": (specs.agent_metadata or {}).get("messages_context", {}).get("system_prompt_version"),
+                    },
+                )
+
             finally:
                 await provider.close()
                 
@@ -517,14 +588,18 @@ Please generate a better, more helpful, and complete response that addresses the
             logger.exception("Provider call failed")
             state["errors"].append(str(e))
             state["final_content"] = f"Error calling provider: {str(e)}"
-        
+        finally:
+            durations = state.setdefault("stage_durations", {})
+            durations["llm_generation"] = durations.get("llm_generation", 0.0) + (time.perf_counter() - stage_t0)
+
         return state
-    
+
     @observe(name="workflow_node_validate_response")
     async def _validate_response_node(self, state: WorkflowState) -> WorkflowState:
         """Validate the LLM response for quality and sensibility with confidence scoring"""
         state["execution_steps"].append("validate_response")
         state["validation_attempts"] += 1
+        stage_t0 = time.perf_counter()
         
         try:
             # Get response content
@@ -560,9 +635,13 @@ Please generate a better, more helpful, and complete response that addresses the
             # If validation itself fails, use low confidence
             state["confidence_score"] = 0.5
             state["is_validated"] = True
-        
+        finally:
+            durations = state.setdefault("stage_durations", {})
+            durations["validation"] = durations.get("validation", 0.0) + (time.perf_counter() - stage_t0)
+
         return state
-    
+
+    @observe(name="workflow_validate_response_quality", as_type="evaluator", capture_input=False)
     async def _validate_response_quality(
         self,
         response: str,
@@ -572,7 +651,15 @@ Please generate a better, more helpful, and complete response that addresses the
         """
         Validate response quality using rule-based checks and LLM validation
         Returns confidence score (0.0 - 1.0) along with validation result
+
+        Typed as "evaluator" (assesses a prior LLM response), not "generation" --
+        the actual judge LLM call is nested as its own "generation" span below so
+        it still gets cost/usage tracking (evaluator-typed spans don't). capture_output
+        is left on (default) since the return value here is already a small, clean
+        {is_valid, confidence, ...} dict with many return points -- unlike
+        _call_provider_node, there's no noisy WorkflowState leaking into it.
         """
+        update_current_span(input={"user_message": user_message, "response": response})
         confidence_score = 0.0
         
         # Rule-based checks with confidence scoring
@@ -641,12 +728,22 @@ REASONING: <brief explanation>
 
 If score >= 75, the response is acceptable. Below 75, it needs improvement."""
 
-                validation_response = await provider.generate_response(
-                    messages=[{"role": "user", "content": validation_prompt}],
-                    max_tokens=200,
-                    temperature=0.3
-                )
-                
+                with start_span("judge_call", as_type="generation"):
+                    validation_response = await provider.generate_response(
+                        messages=[{"role": "user", "content": validation_prompt}],
+                        max_tokens=200,
+                        temperature=0.3
+                    )
+
+                    validation_metadata = validation_response.get("metadata", {}) or {}
+                    update_current_generation(
+                        model=validation_metadata.get("model") or specs.provider.model,
+                        input=validation_prompt,
+                        output=validation_response.get("content", ""),
+                        usage_details=_extract_usage_details(validation_metadata),
+                        metadata={"provider": validation_metadata.get("provider", p_type), "purpose": "response_validation"},
+                    )
+
                 validation_text = validation_response.get("content", "").strip()
                 
                 # Parse confidence score
@@ -715,6 +812,21 @@ If score >= 75, the response is acceptable. Below 75, it needs improvement."""
         
         state["status"] = "completed_with_errors" if state["errors"] else "completed"
         state["end_time"] = time.time()
+
+        # Quality signal for the monitoring dashboard -- the LLM-judge confidence
+        # score computed in _validate_response_quality, persisted per-trace so it
+        # can be trended over time (see docs/EVAL_METRICS.md for the offline
+        # counterpart; this is the online, per-request analog).
+        score_current_trace(name="response_confidence", value=confidence, data_type="NUMERIC")
+
+        durations = state.get("stage_durations", {})
+        state["latency_ms"] = {
+            "total": round((state["end_time"] - state["start_time"]) * 1000, 1),
+            "retrieval": round(durations.get("retrieval", 0.0) * 1000, 1),
+            "llm_generation": round(durations.get("llm_generation", 0.0) * 1000, 1),
+            "validation": round(durations.get("validation", 0.0) * 1000, 1),
+        }
+
         logger.info(f"Workflow {state['execution_id']} finished: {state['status']} (confidence: {confidence:.2f}, attempts: {state.get('validation_attempts', 0)})")
         return state
 

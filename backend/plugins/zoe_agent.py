@@ -74,10 +74,11 @@ class ZoeAgent(IAgent):
         
         # 2. History & Prompt
         history = self.zoe_core.get_conversation_history(request.user_context.session_id)
-        prompt = self.zoe_core.build_system_prompt(context)
-        
+        prompt, prompt_version = self.zoe_core.build_system_prompt_versioned(context)
+
         msg_ctx = {
             "system_prompt": prompt,
+            "system_prompt_version": prompt_version,
             "conversation_history": history[-10:],
             "current_message": request.message
         }

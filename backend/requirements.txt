@@ -11,7 +11,9 @@ chromadb
 python-multipart
 anthropic
 httpx
-langfuse>=3.7.0
+# >=3.11.0: first release whose propagate_attributes() accepts trace_name (used in
+# zoe_service.py). <5: 5.x is an untested major release. Verified on 4.14.4.
+langfuse>=3.11.0,<5
 google-genai
 tavily-python
 PyJWT

@@ -42,6 +42,7 @@ from agents.zoe import ZoeService
 from agents.zoe.tts_service import tts_service
 from middleware.keycloak_auth import KeycloakAuthMiddleware, get_user_context, extract_token_from_header, extract_token_from_cookie, get_user_id
 from brain.guardrails import SessionManager
+from evaluation import initialize_langfuse_client, flush_langfuse
 
 # Global instances
 brain_instance = None
@@ -53,6 +54,15 @@ async def lifespan(app: FastAPI):
     global brain_instance, zoe_service_instance
 
     logger.info("Starting ThinkLife Backend...")
+
+    # Observability: always-on Langfuse init (independent of any per-request opt-in).
+    # Always call this even if LANGFUSE_TRACING_ENABLED is unset -- it registers a
+    # single process-wide (possibly disabled) client so the SDK never lazily creates
+    # a second, unconfigured one on the first @observe'd call. See evaluation_manager.py.
+    if initialize_langfuse_client():
+        logger.info("Langfuse tracing enabled")
+    else:
+        logger.info("Langfuse tracing disabled (set LANGFUSE_TRACING_ENABLED=true and LANGFUSE_*_KEY to enable)")
 
     # Brain Config
     brain_config = {
@@ -80,6 +90,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
     if brain_instance: await brain_instance.shutdown()
     if zoe_service_instance: await zoe_service_instance.shutdown()
+    flush_langfuse()
     logger.info("Shutdown complete")
 
 
