@@ -2,6 +2,7 @@
 Vector Database Data Source - Integration with vector databases for semantic search
 """
 
+import asyncio
 import logging
 import os
 from typing import Dict, Any, List, Optional
@@ -10,6 +11,7 @@ from pathlib import Path
 from ..specs import IDataSource, DataSourceType
 from .base_data_source import DataSourceConfig
 from .data_source_registry import get_data_source_registry
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +89,8 @@ class VectorDataSource(IDataSource):
         try:
             embeddings = self._load_embeddings()
             if not embeddings:
-                logger.warning("No embeddings found, functionality limited")
+                logger.warning("Vector search disabled: no embedding model available")
+                return None
             
             if db_path:
                 persist_dir = os.path.abspath(os.path.dirname(db_path) if db_path.endswith('.sqlite3') else db_path)
@@ -126,20 +129,9 @@ class VectorDataSource(IDataSource):
             return None
     
     def _load_embeddings(self):
-        try:
-            from langchain_openai import OpenAIEmbeddings
-            if os.getenv("OPENAI_API_KEY"):
-                model = self.config.config.get("embedding_model") or "text-embedding-3-small"
-                return OpenAIEmbeddings(model=model)
-            logger.warning("OPENAI_API_KEY missing")
-            return None
-        except ImportError:
-            logger.warning("OpenAI embeddings library missing")
-            return None
-        except Exception:
-            logger.exception("Failed to load embeddings")
-            return None
-    
+        from .embeddings import get_embeddings
+        return get_embeddings(self.config.config.get("embedding_model"))
+
     async def query(self, query: str, context: Dict[str, Any] = None, **kwargs) -> List[Dict[str, Any]]:
         if not self._initialized or not self.vectorstore:
             logger.error("Vectorstore not initialized")
@@ -149,7 +141,12 @@ class VectorDataSource(IDataSource):
             k = kwargs.get("k", self.config.config.get("k", 5))
             filter_crit = kwargs.get("filter") or (context.get("filter") if context else None)
             
-            docs = self.vectorstore.similarity_search(query, k=k, filter=filter_crit)
+            # Chroma's similarity_search() is a synchronous, blocking call -
+            # asyncio.to_thread keeps it from blocking the event loop while
+            # it runs (Epic 5 / Story 5.1).
+            docs = await asyncio.to_thread(
+                self.vectorstore.similarity_search, query, k=k, filter=filter_crit
+            )
             
             return [{
                     "content": doc.page_content,

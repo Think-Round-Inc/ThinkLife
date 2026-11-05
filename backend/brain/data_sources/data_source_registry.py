@@ -4,26 +4,33 @@ Data Source Registry - Checks if data source files are available
 
 import logging
 from pathlib import Path
+from typing import Iterable
+
+from ..registry_base import FileBackedRegistry
 
 logger = logging.getLogger(__name__)
 
 DATA_SOURCES = ["vector_db"]
 
 
-class DataSourceRegistry:
-    """Registry for data sources"""
-    
+class DataSourceRegistry(FileBackedRegistry[str]):
+    """
+    Registry for data sources.
+
+    Shares its lookup logic with `ProviderRegistry` and `ToolRegistry` via
+    `FileBackedRegistry` (see `brain/registry_base.py`).
+    """
+
+    resource_kind = "Data source"
+
+    def _allowed_names(self) -> Iterable[str]:
+        return DATA_SOURCES
+
+    def _module_dir(self) -> Path:
+        return Path(__file__).parent
+
     def check_data_source_available(self, source_name: str) -> bool:
-        if source_name not in DATA_SOURCES:
-            logger.warning(f"Data source '{source_name}' not in allowed list")
-            return False
-        
-        file_path = Path(__file__).parent / f"{source_name}.py"
-        if not file_path.exists():
-            logger.warning(f"Data source file missing: {source_name}.py")
-            return False
-        
-        return True
+        return self.is_available(source_name)
 
 
 _data_source_registry_instance = None

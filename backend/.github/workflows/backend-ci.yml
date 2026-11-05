@@ -1,0 +1,36 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+  pull_request:
+    paths:
+      - "backend/**"
+
+jobs:
+  test-and-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest mypy
+
+      - name: Run tests
+        run: pytest -v
+
+      - name: Type-check (config, registry base, provider protocol, plugin registry, lifecycle, resilience, background)
+        run: |
+          mypy config brain/registry_base.py brain/providers/protocol.py \
+            brain/lifecycle.py brain/resilience background plugins/registry.py plugins/echo_agent.py \
+            --config-file mypy.ini --follow-imports=silent

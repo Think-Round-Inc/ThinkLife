@@ -6,13 +6,10 @@ import pandas as pd
 from dotenv import load_dotenv
 from langchain.schema import Document
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
 
-# Load environment variables
+# Load environment variables (before importing settings so .env is honoured)
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY missing in environment variables")
+from brain.data_sources.embeddings import get_embeddings  # run from backend/: python -m agents.zoe.utils.knowledge_index_builder
 
 # Configuration (can be overridden via env vars)
 CONTEXT_PATH = os.getenv("CONTEXT_TXT_PATH", "data/context.txt")
@@ -22,8 +19,10 @@ CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 300))
 MAX_EMPATHY_EXAMPLES = int(os.getenv("MAX_EMPATHY_EXAMPLES", 500))
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "agents/zoe/chroma_db")
 
-# Initialize embedding model
-embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+# Same model the app uses for search (EMBEDDING_PROVIDER / EMBEDDING_MODEL in backend/.env).
+embeddings = get_embeddings()
+if embeddings is None:
+    raise RuntimeError("No usable embeddings: check EMBEDDING_PROVIDER and its API key")
 
 
 def load_context_txt(path: str, chunk_size: int = CHUNK_SIZE) -> list[Document]:

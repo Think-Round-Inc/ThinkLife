@@ -8,6 +8,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+from .core_specs import BrainRequest
+from .data_source_specs import DataSourceSpec
+from .provider_specs import ProviderSpec
+from .tool_specs import ToolSpec
+from .workflow_specs import ProcessingSpec
+
 
 class AgentCapability(str, Enum):
     """Agent capabilities"""
@@ -86,10 +92,10 @@ class AgentExecutionSpec:
     - Which tools to apply
     - How to process the request
     """
-    data_sources: List[Any] = field(default_factory=list)  # List[DataSourceSpec]
-    provider: Optional[Any] = None  # Optional[ProviderSpec]
-    tools: List[Any] = field(default_factory=list)  # List[ToolSpec]
-    processing: Any = None  # ProcessingSpec
+    data_sources: List[DataSourceSpec] = field(default_factory=list)
+    provider: Optional[ProviderSpec] = None
+    tools: List[ToolSpec] = field(default_factory=list)
+    processing: Optional[ProcessingSpec] = None
     
     # Optional agent-specific metadata
     agent_metadata: Dict[str, Any] = field(default_factory=dict)
@@ -97,10 +103,10 @@ class AgentExecutionSpec:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
-            "data_sources": [ds.to_dict() if hasattr(ds, 'to_dict') else ds for ds in self.data_sources],
-            "provider": self.provider.to_dict() if hasattr(self.provider, 'to_dict') else self.provider,
-            "tools": [tool.to_dict() if hasattr(tool, 'to_dict') else tool for tool in self.tools],
-            "processing": self.processing.to_dict() if hasattr(self.processing, 'to_dict') else self.processing,
+            "data_sources": [ds.to_dict() for ds in self.data_sources],
+            "provider": self.provider.to_dict() if self.provider is not None else None,
+            "tools": [tool.to_dict() for tool in self.tools],
+            "processing": self.processing.to_dict() if self.processing is not None else None,
             "agent_metadata": self.agent_metadata
         }
 
@@ -127,7 +133,7 @@ class IAgent(ABC):
         pass
     
     @abstractmethod
-    async def create_execution_specs(self, request: Any) -> AgentExecutionSpec:  # request: BrainRequest
+    async def create_execution_specs(self, request: BrainRequest) -> AgentExecutionSpec:
         """
         Agent specifies how Brain should process the request:
         - Which data sources to query
@@ -140,7 +146,7 @@ class IAgent(ABC):
         pass
     
     @abstractmethod
-    async def process_request(self, request: Any) -> AgentResponse:  # request: BrainRequest
+    async def process_request(self, request: BrainRequest) -> AgentResponse:
         """
         Process a user request and return response
         
@@ -158,7 +164,7 @@ class IAgent(ABC):
         """Clean shutdown of agent resources"""
         pass
     
-    async def can_handle_request(self, request: Any) -> float:  # request: BrainRequest
+    async def can_handle_request(self, request: BrainRequest) -> float:
         """
         Return confidence score (0.0-1.0) for handling this request
         Default implementation checks supported applications
@@ -197,7 +203,7 @@ class ISafetyAwareAgent(IAgent):
     """
     
     @abstractmethod
-    async def assess_content_safety(self, request: Any) -> Dict[str, Any]:  # request: BrainRequest
+    async def assess_content_safety(self, request: BrainRequest) -> Dict[str, Any]:
         """
         Assess request for safety concerns
         
@@ -216,9 +222,11 @@ class IStreamingAgent(IAgent):
     """Interface for agents that support streaming responses"""
     
     @abstractmethod
-    async def stream_response(self, request: Any) -> AsyncGenerator[str, None]:  # request: BrainRequest
+    async def stream_response(self, request: BrainRequest) -> AsyncGenerator[str, None]:
         """Stream response chunks as they're generated"""
-        pass
+        # `raise` before an unreachable `yield`
+        raise NotImplementedError
+        yield
 
 
 class IAgentPlugin(ABC):

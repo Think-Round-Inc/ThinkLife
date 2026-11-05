@@ -110,30 +110,28 @@ pip install -r requirements.txt
 Create a file named `.env` in the `backend/` directory with the following content:
 
 ```env
-# OpenAI Configuration (REQUIRED)
+# --- Which LLM the chatbot (Zoe) uses -------------------------------
+# Pick ONE provider: openai | anthropic | gemini | openrouter  (default: openai)
+LLM_PROVIDER_TYPE=openai
+# Optional. Leave unset to use the provider's default model (see table below).
+# LLM_PROVIDER_MODEL=gpt-4o-mini
+
+# --- API keys: set the key for the provider you selected ------------
 OPENAI_API_KEY=your_openai_api_key_here
+# ANTHROPIC_API_KEY=
+# GEMINI_API_KEY=
+# OPENROUTER_API_KEY=
+
+# --- Which model builds/searches Zoe's knowledge base (embeddings) --
+# auto (default) = OpenAI if OPENAI_API_KEY is set, otherwise a free local model.
+# Or choose: local | openai | openrouter | gemini  (uses that provider's key above)
+EMBEDDING_PROVIDER=auto
+# EMBEDDING_MODEL=   # unset = provider default (see "Switching LLM Providers")
+
+# OpenAI generation defaults (used when LLM_PROVIDER_TYPE=openai)
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_MAX_TOKENS=2000
 OPENAI_TEMPERATURE=0.7
-
-# Anthropic Configuration (OPTIONAL - only needed if using the "anthropic" provider)
-# ANTHROPIC_API_KEY=your_anthropic_api_key_here
-
-# Gemini Configuration (OPTIONAL - only needed if using the "gemini" provider)
-# GEMINI_API_KEY=your_gemini_api_key_here
-
-# OpenRouter Configuration (OPTIONAL - only needed if using the "openrouter" provider)
-# OpenRouter is an OpenAI-compatible gateway to many model vendors
-# (https://openrouter.ai/models). Models are passed as "vendor/model" ids,
-# e.g. model="openai/gpt-4o-mini" or model="anthropic/claude-3.5-sonnet".
-# OPENROUTER_API_KEY=your_openrouter_api_key_here
-
-# Zoe's chatbot provider (OPTIONAL - defaults to OpenAI/gpt-4o-mini)
-# Setting the API key above does NOT switch the chatbot to that provider -
-# Zoe's agent (plugins/zoe_agent.py) reads these two vars to pick which
-# provider+model it actually calls. Set both to use OpenRouter, e.g.:
-# ZOE_PROVIDER_TYPE=openrouter
-# ZOE_PROVIDER_MODEL=openai/gpt-4o-mini
 
 # Vector Database Configuration (OPTIONAL)
 # CHROMA_DB_DIR=chroma_db
@@ -145,6 +143,9 @@ DEBUG=True
 # CORS Settings
 CORS_ORIGINS=http://localhost:3000
 ```
+
+> You only need the key for the provider you selected. Nothing else requires
+> an OpenAI key (see "Switching LLM Providers" below).
 
 ### Step 3: Keycloak Setup (Docker)
 
@@ -220,6 +221,44 @@ cd frontend
 npm run dev
 ```
 
+## Switching LLM Providers
+
+The chat model is chosen by two settings in `backend/.env`. Restart the backend after changing them.
+
+| `LLM_PROVIDER_TYPE` | Key to set | Default model (when `LLM_PROVIDER_MODEL` is unset) | Other allowed models |
+|---|---|---|---|
+| `openai` (default) | `OPENAI_API_KEY` | value of `OPENAI_MODEL` (`gpt-4o-mini`) | `gpt-4o`, `gpt-4-turbo`, `gpt-4`, `gpt-3.5-turbo` |
+| `anthropic` | `ANTHROPIC_API_KEY` | see `brain/providers/provider_registry.py` | listed there |
+| `gemini` | `GEMINI_API_KEY` | see `brain/providers/provider_registry.py` | listed there |
+| `openrouter` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` | `anthropic/claude-3.5-sonnet`, `meta-llama/llama-3.1-70b-instruct`, `google/gemini-flash-1.5` |
+
+Example: use OpenRouter with Claude 3.5 Sonnet.
+
+```env
+LLM_PROVIDER_TYPE=openrouter
+LLM_PROVIDER_MODEL=anthropic/claude-3.5-sonnet
+OPENROUTER_API_KEY=sk-or-...
+```
+
+Notes:
+- Get an OpenRouter key at https://openrouter.ai/keys. Model names there look like `vendor/model`.
+- The model must belong to the chosen provider. A mismatch (for example `gpt-4o-mini` with `openrouter`) logs a "Startup configuration warning" and requests will fail. In production (`ENVIRONMENT=production`) the backend refuses to start.
+- A missing key for the selected provider gives the same warning. Check the backend log at startup.
+- To allow a new model, add it to `PROVIDER_CONFIGS` in `backend/brain/providers/provider_registry.py`.
+- **Knowledge-base embeddings are chosen separately** with `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL`:
+
+  | `EMBEDDING_PROVIDER` | Key needed | Default model |
+  |---|---|---|
+  | `auto` (default) | none | `openai` if `OPENAI_API_KEY` is set, otherwise `local` |
+  | `local` | none | MiniLM-L6-v2, downloaded once (~80 MB, to `~/.cache/chroma`) and run on your machine |
+  | `openai` | `OPENAI_API_KEY` | `text-embedding-3-small` |
+  | `openrouter` | `OPENROUTER_API_KEY` | `openai/text-embedding-3-small` (also e.g. `qwen/qwen3-embedding-0.6b`) |
+  | `gemini` | `GEMINI_API_KEY` | `gemini-embedding-001` |
+
+  **An index only works with the model that built it.** After changing `EMBEDDING_PROVIDER` or `EMBEDDING_MODEL`, rebuild it from `backend/` with `python -m agents.zoe.utils.knowledge_index_builder` (needs the source files `data/context.txt`, `data/knowledge_base.json`, `data/empathetic_dialogues_train.csv`; they are not in the repo, and the shipped `chroma.sqlite3` is empty). If the chosen embedding provider has no key, knowledge search is switched off and Zoe still answers.
+- **Still OpenAI-only:** text-to-speech (switched off without `OPENAI_API_KEY`), the LLM-judge evaluators in `backend/evaluators/` and the separate `faq-bot-rag/` app.
+- The frontend needs no change; it only talks to the backend.
+
 ## Accessing the Application
 
 - **Frontend**: http://localhost:3000
@@ -238,6 +277,10 @@ If ports 3000, 8000, or 8080 are in use:
 - Ensure Docker is running.
 - Check logs: `docker-compose logs -f keycloak`
 - Ensure `NEXT_PUBLIC_KEYCLOAK_URL` in frontend `.env.local` matches the Docker setup.
+
+### Chatbot Not Answering / Wrong Provider
+- Look for `Startup configuration warning` in the backend log: it names a missing key or an invalid `LLM_PROVIDER_TYPE` / `LLM_PROVIDER_MODEL`.
+- Check `GET /health/ready` for per-provider status and circuit-breaker state.
 
 ### Python Issues
 - Ensure you are using the virtual environment (`.venv`).

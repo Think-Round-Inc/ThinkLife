@@ -6,26 +6,26 @@ All domain logic (personality, prompts, conversation) stays in agents/zoe/
 import logging
 import sys
 import os
-from pathlib import Path
-from typing import Dict, Any
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 from brain.specs import (
-    IAgent, AgentMetadata, AgentConfig, AgentResponse, BrainRequest,
+    IAgent, IStreamingAgent, AgentMetadata, AgentConfig, AgentResponse, BrainRequest,
     AgentCapability, AgentExecutionSpec, DataSourceSpec, ProviderSpec, 
     ProcessingSpec, DataSourceType
 )
 from brain.cortex import CortexFlow
 from agents.zoe import ZoeCore
+from config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class ZoeAgent(IAgent):
-    """Zoe Agent - Connector to CortexFlow"""
+class ZoeAgent(IStreamingAgent):
+    """Zoe Agent - Connector to CortexFlow. Implements IStreamingAgent (Task 10.2) in addition to IAgent."""
     
     def __init__(self, config: AgentConfig):
         self.config = config
@@ -82,8 +82,10 @@ class ZoeAgent(IAgent):
             "current_message": request.message
         }
         
-        default_db = Path(__file__).resolve().parent.parent / "data" / "zoe.sqlite3"
-        db_path = os.getenv("ZOE_VECTOR_DB_PATH", str(default_db))
+        db_path = settings.zoe_vector_db_path_resolved
+        provider, model = settings.default_llm()
+        # penalties are OpenAI-API params; openrouter is OpenAI-compatible
+        extra = {"presence_penalty": 0.1, "frequency_penalty": 0.1} if provider in ("openai", "openrouter") else {}
         
         return AgentExecutionSpec(
             data_sources=[
@@ -96,11 +98,11 @@ class ZoeAgent(IAgent):
                 ),
             ],
             provider=ProviderSpec(
-                provider_type=os.getenv("ZOE_PROVIDER_TYPE", "openai"),
-                model=os.getenv("ZOE_PROVIDER_MODEL", "gpt-4o-mini"),
+                provider_type=provider,
+                model=model,
                 temperature=0.7,
                 max_tokens=1500,
-                custom_params={"presence_penalty": 0.1, "frequency_penalty": 0.1}
+                custom_params=extra
             ),
             tools=[],
             processing=ProcessingSpec(
@@ -192,7 +194,43 @@ class ZoeAgent(IAgent):
                 processing_time=time.time() - start_time if start_time else 0,
                 session_id=session_id
             )
-    
+
+    async def stream_response(self, request: BrainRequest) -> AsyncGenerator[str, None]:
+        """
+        Streaming counterpart to `process_request`
+        """
+        if not self.initialized:
+            await self.initialize(self.config)
+
+        session_id = request.user_context.session_id
+        agent_specs = await self.create_execution_specs(request)
+        logger.info(f"Zoe streaming for session: {session_id}")
+
+        full_response_parts: List[str] = []
+        post_processed: Optional[str] = None
+        try:
+            async for chunk in self.cortex.process_agent_request_streaming(agent_specs, request):
+                full_response_parts.append(chunk)
+                yield chunk
+        finally:
+            full_response = "".join(full_response_parts)
+            if full_response:
+                u_ctx = {
+                    "user_id": request.user_context.user_id,
+                    "ace_score": getattr(request.user_context, "ace_score", None),
+                }
+                ctx = self.zoe_core.prepare_context(request.message, u_ctx, session_id)
+                post_processed = self.zoe_core.post_process_response(full_response, ctx)
+                self.zoe_core.update_conversation(session_id, request.message, post_processed)
+
+        # Only reached on normal stream completion - a client disconnect
+        # (GeneratorExit) propagates out through the `finally` above and
+        # this line is never reached in that case.
+        if post_processed is not None:
+            supplement = post_processed[len(full_response):]
+            if supplement:
+                yield supplement
+
     async def health_check(self) -> Dict[str, Any]:
         health = {
             "agent": "zoe",

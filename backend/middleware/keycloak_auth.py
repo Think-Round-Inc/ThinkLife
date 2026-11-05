@@ -31,7 +31,11 @@ class KeycloakAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.session_manager = session_manager or SessionManager()
         self.public_paths = [
+            "/health",
+            "/healthz",
             "/api/health",
+            "/api/brain/health",
+            "/api/zoe/health",
             "/docs",
             "/openapi.json",
             "/redoc",
@@ -45,7 +49,7 @@ class KeycloakAuthMiddleware(BaseHTTPMiddleware):
         user_context = {}
         
         if token:
-            result = self.session_manager.validate_session(token)
+            result = await self.session_manager.validate_session(token)
             if result["valid"]:
                 user_context = result["user_context"]
                 # logger.debug(f"Auth success for {user_context.get('user_id')}")

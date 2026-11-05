@@ -4,7 +4,9 @@ Provider Registry - Checks if provider files are available and validates specs
 
 import logging
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Iterable
+
+from ..registry_base import FileBackedRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -24,19 +26,28 @@ PROVIDER_CONFIGS = {
         "default_model": "gemini-1.5-flash",
     },
     "openrouter": {
+        # OpenRouter proxies many vendors' models under "vendor/model" ids;
+        # this is a starter allow-list, not the full catalog (see
+        # https://openrouter.ai/models). Add more as needed.
         "models": ["openrouter/free", "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "meta-llama/llama-3.1-70b-instruct", "google/gemini-flash-1.5"],
         "default_model": "openrouter/free",
     },
 }
 
 
-class ProviderRegistry:
+class ProviderRegistry(FileBackedRegistry[str]):
     """
     Registry for providers
-    
-    Checks if provider files exist and validates provider specs
     """
-    
+
+    resource_kind = "Provider"
+
+    def _allowed_names(self) -> Iterable[str]:
+        return PROVIDER_CONFIGS.keys()
+
+    def _module_dir(self) -> Path:
+        return Path(__file__).parent
+
     def check_provider_and_model(self, provider_type: str, model: str = None) -> Tuple[bool, List[str], Optional[Dict[str, Any]]]:
         """
         Check provider and model in one function
@@ -65,8 +76,8 @@ class ProviderRegistry:
             errors.append(f"Provider '{provider_type}' not found. Available: {available}")
             return False, errors, None
         
-        # Check if provider file exists
-        file_path = Path(__file__).parent / f"{provider_type}.py"
+        # Check if provider file exists (shared logic - see FileBackedRegistry)
+        file_path = self._module_dir() / f"{provider_type}.py"
         if not file_path.exists():
             errors.append(f"Provider file not found: {provider_type}.py")
             return False, errors, None

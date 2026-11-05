@@ -8,8 +8,10 @@ Plugins specify:
 - Execution specifications (data sources, providers, tools, processing)
 - Request processing logic
 - Brain integration
+
 """
 
-# This file makes the plugins directory a Python package
-# Plugins will be automatically discovered by the agent registry
+from .registry import PluginRegistry, get_plugin_registry, register_builtin_plugins
+
+__all__ = ["PluginRegistry", "get_plugin_registry", "register_builtin_plugins"]
 

@@ -2,10 +2,13 @@
 Workflow specifications and types
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+
+if TYPE_CHECKING:
+    from .agent_specs import AgentExecutionSpec
 
 
 class WorkflowStatus(str, Enum):
@@ -100,10 +103,10 @@ class ExecutionPlan:
     the workflow engine for execution.
     """
     # The original specs from the agent
-    original_specs: Any  # AgentExecutionSpec
+    original_specs: "AgentExecutionSpec"
     
     # The specs to actually execute (may be optimized by reasoning)
-    optimized_specs: Any  # AgentExecutionSpec
+    optimized_specs: "AgentExecutionSpec"
     
     # Whether reasoning was applied
     reasoning_applied: bool

@@ -3,7 +3,7 @@ Core specifications - Brain request/response, user context, configuration, analy
 """
 
 from typing import Dict, List, Optional, Any, Literal
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 
@@ -166,6 +166,20 @@ class HealthStatus:
     providers: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     system: Dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class ComponentHealth:
+    """
+    Standard per-component health check result.
+    """
+    status: Literal["healthy", "degraded", "unhealthy"]
+    component: str
+    latency_ms: Optional[float] = None
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass

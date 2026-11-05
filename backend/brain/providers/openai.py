@@ -4,10 +4,11 @@ OpenAI Provider - Integration with OpenAI GPT models
 
 import logging
 import os
-from typing import Dict, Any, List, Optional, Union
+from typing import AsyncGenerator, Dict, Any, List, Optional, Union
 
 from ..specs import ProviderSpec
 from .provider_registry import get_provider_registry
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class OpenAIProvider:
             return False
         
         try:
-            api_key = self.config.get("api_key") or os.getenv("OPENAI_API_KEY")
+            api_key = self.config.get("api_key") or settings.openai_api_key
             if not api_key:
                 logger.error("OpenAI API key missing")
                 return False
@@ -108,6 +109,35 @@ class OpenAIProvider:
             logger.exception("OpenAI request failed")
             return self._error_response(str(e))
     
+    async def stream_response(self, messages: List[Dict[str, str]], **kwargs: Any) -> AsyncGenerator[str, None]:
+        """
+        Stream response content chunk-by-chunk (Task 10.1). Reuses the same
+        param-building as `generate_response`; only the actual API call and
+        response iteration differ. Yields text deltas as they arrive - no
+        confidence scoring or retry happens here (see
+        `WorkflowEngine.stream_execution`, Task 10.3, for why).
+        """
+        if not self._initialized:
+            raise RuntimeError("Provider not initialized")
+
+        params = self._build_request_params(kwargs)
+        params["messages"] = messages
+        params["stream"] = True
+
+        if not params.get("model"):
+            model = self.config.get("model")
+            if not model:
+                raise ValueError("Model missing")
+            params["model"] = model
+
+        stream = await self.client.chat.completions.create(**params)
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                yield delta.content
+
     def _build_request_params(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         params = {
             "model": kwargs.get("model", self.config.get("model")),

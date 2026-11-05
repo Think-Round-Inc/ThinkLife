@@ -87,12 +87,12 @@ class SecurityManager:
             "original_content": content
         }
     
-    def validate_user(self, user_context: Dict[str, Any], token: Optional[str] = None) -> Dict[str, Any]:
+    async def validate_user(self, user_context: Dict[str, Any], token: Optional[str] = None) -> Dict[str, Any]:
         config = self.config.get("user_validation", {})
         auth = user_context.get("authenticated", False) or user_context.get("is_authenticated", False)
         
         if token:
-            res = self.session_manager.validate_session(token, user_context)
+            res = await self.session_manager.validate_session(token, user_context)
             if not res["valid"]:
                 if auth:
                     logger.debug("Token invalid but context authenticated (middleware)")

@@ -7,8 +7,7 @@ import asyncio
 import logging
 import time
 import uuid
-import os
-from typing import Dict, Any, List, Optional, TypedDict
+from typing import Dict, Any, AsyncGenerator, List, Optional, TypedDict
 from functools import reduce
 
 logger = logging.getLogger(__name__)
@@ -23,6 +22,9 @@ except ImportError:
         return decorator
 
 from ..specs import WorkflowStatus
+from ..lifecycle import managed_provider, managed_data_source, DEFAULT_TOOL_TIMEOUT_SECONDS
+from ..resilience import run_tool_with_retry
+from config import settings
 
 class WorkflowState(TypedDict):
     """State for LangGraph workflow"""
@@ -63,11 +65,27 @@ class WorkflowEngine:
         self.executions: Dict[str, Dict[str, Any]] = {}
         self._initialized = False
         self.graph = None
+
+        self._executions_lock = asyncio.Lock()
+        self._max_tracked_executions = 500
+
+        self.provider_semaphore = asyncio.Semaphore(settings.max_concurrent_provider_calls)
     
     async def initialize(self):
         self._initialized = True
         self._build_graph()
         logger.info("Workflow Engine initialized")
+
+    async def _record_execution(self, execution_id: str, final_state: Dict[str, Any]) -> None:
+        """
+        Record a completed execution's final state, evicting the oldest
+        entry once `_max_tracked_executions` is exceeded
+        """
+        async with self._executions_lock:
+            self.executions[execution_id] = final_state
+            while len(self.executions) > self._max_tracked_executions:
+                oldest_key = next(iter(self.executions))
+                del self.executions[oldest_key]
     
     def _build_graph(self):
         try:
@@ -159,7 +177,7 @@ class WorkflowEngine:
                 "start_time": start_time,
                 "end_time": None,
                 "validation_attempts": 0,
-                "max_validation_runs": 5,
+                "max_validation_runs": settings.max_validation_attempts,
                 "validation_feedback": None,
                 "is_validated": False,
                 "confidence_score": 0.0
@@ -170,7 +188,7 @@ class WorkflowEngine:
             else:
                 final_state = await self._execute_sequential(initial_state)
             
-            self.executions[execution_id] = final_state
+            await self._record_execution(execution_id, final_state)
             
             # Determine outcome
             final_content = final_state.get("final_content")
@@ -214,6 +232,85 @@ class WorkflowEngine:
                 "status": "failed",
                 "metadata": {"error": str(e)}
             }
+
+    async def stream_execution(self, specs: Any, request: Any) -> AsyncGenerator[str, None]:
+        """
+        Streaming counterpart to `execute_plan`
+        """
+        execution_id = str(uuid.uuid4())
+        start_time = time.time()
+        state: WorkflowState = {
+            "execution_id": execution_id,
+            "request": request,
+            "specs": specs,
+            "data_source_results": [],
+            "tool_results": [],
+            "messages": [],
+            "context": {"session_id": getattr(request.user_context, "session_id", None)},
+            "llm_response": None,
+            "final_content": None,
+            "errors": [],
+            "execution_steps": [],
+            "status": "running",
+            "start_time": start_time,
+            "end_time": None,
+            "validation_attempts": 0,
+            "max_validation_runs": settings.max_validation_attempts,
+            "validation_feedback": None,
+            "is_validated": False,
+            "confidence_score": 0.0,
+        }
+
+        full_content_parts: List[str] = []
+        try:
+            state = await self._initialize_node(state)
+            state = await self._query_data_sources_node(state)
+            state = await self._execute_tools_node(state)
+            state = await self._build_messages_node(state)
+
+            if not specs.provider:
+                raise ValueError("No provider specified")
+
+            config = specs.provider.to_dict() if hasattr(specs.provider, "to_dict") else {}
+            p_type = specs.provider.provider_type
+            config.pop("provider_type", None)
+            if "api_key" not in config:
+                provider_key = settings.provider_api_key(p_type)
+                if provider_key:
+                    config["api_key"] = provider_key
+
+            kwargs: Dict[str, Any] = {}
+            if specs.provider.model: kwargs["model"] = specs.provider.model
+            if specs.provider.temperature is not None: kwargs["temperature"] = specs.provider.temperature
+            if specs.provider.max_tokens: kwargs["max_tokens"] = specs.provider.max_tokens
+
+            async with self.provider_semaphore, managed_provider(p_type, config) as provider:
+                if hasattr(provider, "stream_response"):
+                    async for chunk in provider.stream_response(messages=state["messages"], **kwargs):
+                        if chunk:
+                            full_content_parts.append(chunk)
+                            yield chunk
+                else:
+                    # Graceful degradation for providers without a streaming
+                    # implementation
+                    response = await provider.generate_response(messages=state["messages"], **kwargs)
+                    if response.get("success"):
+                        content = response.get("content", "")
+                        if content:
+                            full_content_parts.append(content)
+                            yield content
+                    else:
+                        raise RuntimeError(response.get("metadata", {}).get("error", "Provider call failed"))
+
+            state["status"] = "completed"
+
+        finally:
+            state["final_content"] = "".join(full_content_parts)
+            state["end_time"] = time.time()
+            if state["status"] == "running":
+                state["status"] = "failed"
+            await self._record_execution(execution_id, state)
+
     
     @observe(name="workflow_execute_graph")
     async def _execute_graph(self, initial_state: WorkflowState) -> WorkflowState:
@@ -268,58 +365,76 @@ class WorkflowEngine:
         return state
     
     @observe(name="workflow_node_query_data_sources")
+    async def _query_one_data_source(self, ds_spec, state: WorkflowState) -> Dict[str, Any]:
+        """
+        Query a single data source and return its result dict. 
+        """
+        from ..data_sources import get_data_source_registry, create_vector_data_source, DataSourceConfig
+        from ..specs import DataSourceType
+
+        registry = get_data_source_registry()
+        request = state["request"]
+
+        try:
+            source_name = str(ds_spec.source_type.value if hasattr(ds_spec.source_type, 'value') else ds_spec.source_type)
+
+            if source_name == "vector_db":
+                if not registry.check_data_source_available("vector_db"):
+                    return {"source": source_name, "error": "Not available", "_soft_unavailable": True}
+
+                config = DataSourceConfig(
+                    source_id="vector_db",
+                    source_type=DataSourceType.VECTOR_DB,
+                    config=ds_spec.config or {}
+                )
+                vector_source = create_vector_data_source(config)
+                init_config = ds_spec.config or {}
+
+                async with managed_data_source(vector_source, init_config) as source:
+                    query_res = await source.query(
+                        query=ds_spec.query or request.message,
+                        context={"filter": ds_spec.config.get("filter")},
+                        k=ds_spec.limit or 5
+                    )
+                    return {"source": source_name, "results": query_res, "count": len(query_res)}
+
+            return {"source": source_name, "error": "Unsupported data source type", "_soft_unavailable": True}
+
+        except Exception as e:
+            logger.warning(f"Data source query failed for {ds_spec.source_type}: {e}")
+            return {"source": str(ds_spec.source_type), "error": str(e), "_soft_unavailable": False}
+
     async def _query_data_sources_node(self, state: WorkflowState) -> WorkflowState:
         state["execution_steps"].append("query_data_sources")
         
         try:
-            from ..data_sources import get_data_source_registry, create_vector_data_source, DataSourceConfig
-            from ..specs import DataSourceType
-            
-            registry = get_data_source_registry()
-            request = state["request"]
             specs = state["specs"]
+            enabled_specs = [ds for ds in specs.data_sources if ds.enabled]
+
+            # Data sources are independent of one another, so query them
+            # concurrently rather than one at a time.
+            gathered = await asyncio.gather(
+                *(self._query_one_data_source(ds_spec, state) for ds_spec in enabled_specs),
+                return_exceptions=True,
+            )
+
             results = []
-            
-            for ds_spec in specs.data_sources:
-                if not ds_spec.enabled: continue
-                
-                try:
-                    # Logic simplified for readability
-                    source_name = str(ds_spec.source_type.value if hasattr(ds_spec.source_type, 'value') else ds_spec.source_type)
-                    
-                    if source_name == "vector_db":
-                        if registry.check_data_source_available("vector_db"):
-                            config = DataSourceConfig(
-                                source_id="vector_db",
-                                source_type=DataSourceType.VECTOR_DB,
-                                config=ds_spec.config or {}
-                            )
-                            # Assuming proper initialization params
-                            vector_source = create_vector_data_source(config)
-                            init_config = ds_spec.config or {}
-                            
-                            if await vector_source.initialize(init_config):
-                                query_res = await vector_source.query(
-                                    query=ds_spec.query or request.message,
-                                    context={"filter": ds_spec.config.get("filter")},
-                                    k=ds_spec.limit or 5
-                                )
-                                results.append({
-                                    "source": source_name,
-                                    "results": query_res,
-                                    "count": len(query_res)
-                                })
-                                await vector_source.close()
-                            else:
-                                results.append({"source": source_name, "error": "Initialization failed"})
-                        else:
-                            results.append({"source": source_name, "error": "Not available"})
-                            
-                except Exception as e:
-                    logger.warning(f"Data source query failed for {ds_spec.source_type}: {e}")
-                    state["errors"].append(f"DS Error: {str(e)}")
-            
+            errors = []
+            for ds_spec, outcome in zip(enabled_specs, gathered):
+                if isinstance(outcome, BaseException):
+                    logger.exception(f"Data source query failed for {ds_spec.source_type}", exc_info=outcome)
+                    errors.append(f"DS Error: {str(outcome)}")
+                    continue
+
+                if "error" in outcome and not outcome.pop("_soft_unavailable", False):
+                    # A genuine query/initialize failure
+                    errors.append(f"DS Error: {outcome['error']}")
+                else:
+                    outcome.pop("_soft_unavailable", None)
+                    results.append(outcome)
+
             state["data_source_results"] = results
+            state["errors"].extend(errors)
             
         except Exception as e:
             logger.exception("Data source node error")
@@ -327,28 +442,67 @@ class WorkflowEngine:
         
         return state
     
+    async def _execute_one_tool(self, tool_spec, state: WorkflowState) -> Dict[str, Any]:
+        """
+        Run a single tool and return its result dict. 
+        """
+        from ..tools import get_tool_registry, create_tool
+        registry = get_tool_registry()
+
+        if not registry.check_tool_available(tool_spec.name):
+            return {"tool": tool_spec.name, "error": "Not available"}
+
+        try:
+            tool_instance = create_tool(tool_spec.name, tool_spec.config)
+        except (ValueError, ImportError) as e:
+            
+            logger.warning(f"Tool '{tool_spec.name}' available but not runnable: {e}")
+            return {"tool": tool_spec.name, "error": "Not available"}
+
+        call_kwargs = dict(tool_spec.required_params or {})
+        schema = tool_instance.get_parameters()
+        if "query" in schema and "query" not in call_kwargs:
+            call_kwargs["query"] = state["request"].message
+
+        try:
+            # run_tool_with_retry
+            tool_result = await run_tool_with_retry(tool_instance, DEFAULT_TOOL_TIMEOUT_SECONDS, **call_kwargs)
+            if tool_result.success:
+                return {"tool": tool_spec.name, "status": "executed", "result": tool_result.content}
+            return {"tool": tool_spec.name, "error": tool_result.error or "Tool execution failed"}
+        except asyncio.TimeoutError:
+            logger.warning(f"Tool '{tool_spec.name}' timed out")
+            return {"tool": tool_spec.name, "error": "Tool execution timed out"}
+        except Exception as e:
+            logger.exception(f"Tool '{tool_spec.name}' execution failed")
+            return {"tool": tool_spec.name, "error": str(e)}
+
     @observe(name="workflow_node_execute_tools")
     async def _execute_tools_node(self, state: WorkflowState) -> WorkflowState:
         state["execution_steps"].append("execute_tools")
         
         try:
-            from ..tools import get_tool_registry
-            registry = get_tool_registry()
+            enabled_specs = [t for t in state["specs"].tools if t.enabled]
+
+            # Tools are independent of one another, so run them concurrently
+            # rather than one at a time. return_exceptions=True
+            # means one tool's unexpected failure can't prevent the others'
+            # results from coming back (each tool already has its own
+            # try/except in _execute_one_tool, so this is a second line of
+            # defense, not the primary error handling).
+            gathered = await asyncio.gather(
+                *(self._execute_one_tool(tool_spec, state) for tool_spec in enabled_specs),
+                return_exceptions=True,
+            )
+
             results = []
-            
-            for tool in state["specs"].tools:
-                if not tool.enabled: continue
-                
-                if registry.check_tool_available(tool.name):
-                    # In a real implementation, we'd execute the tool here
-                    results.append({
-                        "tool": tool.name,
-                        "status": "executed",
-                        "result": "Tool execution placeholder" 
-                    })
+            for tool_spec, outcome in zip(enabled_specs, gathered):
+                if isinstance(outcome, BaseException):
+                    logger.exception(f"Tool '{tool_spec.name}' execution failed", exc_info=outcome)
+                    results.append({"tool": tool_spec.name, "error": str(outcome)})
                 else:
-                    results.append({"tool": tool.name, "error": "Not available"})
-            
+                    results.append(outcome)
+
             state["tool_results"] = results
             
         except Exception as e:
@@ -469,8 +623,6 @@ Please generate a better, more helpful, and complete response that addresses the
         state["execution_steps"].append("call_provider")
         
         try:
-            from ..providers import create_provider
-            
             specs = state["specs"]
             if not specs.provider:
                 raise ValueError("No provider specified")
@@ -479,21 +631,13 @@ Please generate a better, more helpful, and complete response that addresses the
             p_type = specs.provider.provider_type
             config.pop("provider_type", None)
             
-            # Auto-inject API keys
-            key_map = {
-                "openai": "OPENAI_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY", 
-                "gemini": "GEMINI_API_KEY",
-                "openrouter": "OPENROUTER_API_KEY"
-            }
-            if p_type in key_map and "api_key" not in config:
-                config["api_key"] = os.getenv(key_map[p_type])
+            # Auto-inject API keys from centralized settings (config/settings.py)
+            if "api_key" not in config:
+                provider_key = settings.provider_api_key(p_type)
+                if provider_key:
+                    config["api_key"] = provider_key
             
-            provider = create_provider(p_type, config)
-            if not await provider.initialize():
-                raise RuntimeError(f"Failed to initialize provider {p_type}")
-            
-            try:
+            async with self.provider_semaphore, managed_provider(p_type, config) as provider:
                 # Prepare params
                 kwargs = {}
                 if specs.provider.model: kwargs["model"] = specs.provider.model
@@ -510,9 +654,6 @@ Please generate a better, more helpful, and complete response that addresses the
                     err = response.get("metadata", {}).get("error", "Unknown provider error")
                     state["errors"].append(err)
                     state["final_content"] = f"Error: {err}"
-                    
-            finally:
-                await provider.close()
                 
         except Exception as e:
             logger.exception("Provider call failed")
@@ -546,8 +687,8 @@ Please generate a better, more helpful, and complete response that addresses the
             confidence = validation_result.get("confidence", 0.0)
             state["confidence_score"] = confidence
             
-            # Threshold check: >= 0.75 is acceptable
-            if confidence >= 0.75:
+            # Threshold check: see config.settings.confidence_threshold
+            if confidence >= settings.confidence_threshold:
                 state["is_validated"] = True
                 logger.info(f"Response validated successfully (attempt {state['validation_attempts']}, confidence: {confidence:.2f})")
             else:
@@ -609,15 +750,11 @@ Please generate a better, more helpful, and complete response that addresses the
             p_type = specs.provider.provider_type
             config.pop("provider_type", None)
             
-            # Auto-inject API keys
-            key_map = {
-                "openai": "OPENAI_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY",
-                "gemini": "GEMINI_API_KEY",
-                "openrouter": "OPENROUTER_API_KEY"
-            }
-            if p_type in key_map and "api_key" not in config:
-                config["api_key"] = os.getenv(key_map[p_type])
+            # Auto-inject API keys from centralized settings (config/settings.py)
+            if "api_key" not in config:
+                provider_key = settings.provider_api_key(p_type)
+                if provider_key:
+                    config["api_key"] = provider_key
             
             provider = create_provider(p_type, config)
             if not await provider.initialize():
@@ -667,7 +804,7 @@ If score >= 75, the response is acceptable. Below 75, it needs improvement."""
                     reasoning_match = re.search(r'REASONING:\s*(.+)', validation_text, re.IGNORECASE | re.DOTALL)
                     reasoning = reasoning_match.group(1).strip() if reasoning_match else "No reasoning provided"
                     
-                    is_valid = final_confidence >= 0.75
+                    is_valid = final_confidence >= settings.confidence_threshold
                     
                     if is_valid:
                         return {"is_valid": True, "confidence": final_confidence, "reasoning": reasoning}
@@ -681,7 +818,7 @@ If score >= 75, the response is acceptable. Below 75, it needs improvement."""
                     # Couldn't parse score, fall back to keyword check
                     logger.warning("Could not parse confidence score from validation response")
                     if "acceptable" in validation_text.lower() or "good" in validation_text.lower():
-                        return {"is_valid": True, "confidence": 0.75}
+                        return {"is_valid": True, "confidence": settings.confidence_threshold}
                     else:
                         return {"is_valid": False, "confidence": 0.5, "feedback": validation_text}
                     
@@ -699,9 +836,9 @@ If score >= 75, the response is acceptable. Below 75, it needs improvement."""
         # Check if confidence is below threshold after all attempts
         confidence = state.get("confidence_score", 0.0)
         
-        if confidence < 0.75:
+        if confidence < settings.confidence_threshold:
             # Replace with fallback response for low confidence
-            logger.warning(f"Final confidence {confidence:.2f} below threshold 0.75, using fallback response")
+            logger.warning(f"Final confidence {confidence:.2f} below threshold {settings.confidence_threshold}, using fallback response")
             
             # Generate appropriate fallback message
             fallback_messages = [

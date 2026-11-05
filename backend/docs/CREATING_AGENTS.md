@@ -265,7 +265,9 @@ class YourAgentPlugin(IAgentPlugin):
         return True  # Add validation logic if needed
 
 
-# Export the plugin for auto-discovery
+# Exported for convenience; registration happens explicitly via
+# plugins/registry.py (see the "Agent Discovery" section below), not by
+# scanning this file.
 __all__ = ["YourAgent", "YourAgentPlugin"]
 ```
 
@@ -299,10 +301,41 @@ self.response_style = config.config.get("response_style", "friendly")
 
 ## Agent Discovery
 
-The Brain automatically discovers your agent by:
-1. Scanning the `agents/` folder
-2. Looking for `*_plugin.py` files in `backend/plugins/`
-3. Importing and registering the plugin class
+Register your agent with the `PluginRegistry` (`plugins/registry.py`) so it
+can be looked up by id instead of being hard-imported at every call site:
+
+```python
+# plugins/registry.py, inside register_builtin_plugins()
+if not reg.is_registered("your_agent"):
+    from plugins.your_agent_plugin import create_your_agent
+
+    config = AgentConfig(agent_id="your_agent")
+    instance = create_your_agent(config)
+    reg.register("your_agent", create_your_agent, instance.metadata)
+```
+
+`register_builtin_plugins()` is called once during app startup (see
+`main.py`'s `lifespan`), and any code can then do:
+
+```python
+from plugins import get_plugin_registry
+
+registry = get_plugin_registry()
+registry.list_plugins()                     # ["zoe", "echo", "your_agent"]
+agent = registry.create("your_agent", config)
+```
+
+Imports inside `register_builtin_plugins()` are deliberately lazy (done
+inside the `if` block, not at module top level) so that importing `plugins`
+never eagerly pulls in a new agent's dependencies unless it's actually being
+registered - see `plugins/echo_agent.py` for a minimal, dependency-free
+reference agent that demonstrates the full contract end to end and is a good
+starting point to copy from.
+
+Note: `ZoeService` (`agents/zoe/zoe_service.py`) still additionally
+hard-imports `ZoeAgent` directly for its own internal use - that direct wiring
+was intentionally left in place for backward compatibility. The registry is
+the recommended path for any *new* agent going forward.
 
 ## Testing Your Agent
 

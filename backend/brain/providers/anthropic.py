@@ -3,7 +3,7 @@ Anthropic Provider - Integration with Anthropic Claude models
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import AsyncGenerator, Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +137,36 @@ class AnthropicProvider:
             logger.error(f"Anthropic request failed: {e}")
             return self._error_response(str(e))
     
+    async def stream_response(self, messages: List[Dict[str, str]], **kwargs: Any) -> AsyncGenerator[str, None]:
+        """
+        Stream response content chunk-by-chunk (Task 10.1). The Anthropic
+        SDK uses a dedicated `client.messages.stream(...)` context manager
+        rather than a `stream=True` kwarg on `.create()` - `_build_request_params`
+        still includes a `stream` key (used by `generate_response`'s
+        `.create()` call), which isn't a valid argument to `.stream()`, so
+        it's popped here.
+        """
+        if not self._initialized:
+            raise RuntimeError("Provider not initialized")
+
+        system = kwargs.get("system") or self.config.get("system")
+        user_messages = [msg for msg in messages if msg.get("role") != "system"]
+        if not system:
+            for msg in messages:
+                if msg.get("role") == "system":
+                    system = msg["content"]
+                    break
+
+        params = self._build_request_params(kwargs)
+        params.pop("stream", None)
+        params["messages"] = user_messages
+        if system:
+            params["system"] = system
+
+        async with self.client.messages.stream(**params) as stream:
+            async for text in stream.text_stream:
+                yield text
+
     def _build_request_params(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """Build request parameters from config and kwargs"""
         params = {

@@ -20,7 +20,7 @@ class ZoeAgent:
     
     # LLM Request Specifications
     llm_specs = {
-        "provider": "openai",
+        "provider": "openai",  // actually settings.default_llm(): set LLM_PROVIDER_TYPE / LLM_PROVIDER_MODEL
         "model": "gpt-4o-mini",
         "temperature": 0.8,
         "max_tokens": 1500,
@@ -108,7 +108,7 @@ class ZoeAgent(IConversationalAgent):
         
         # LLM specifications
         self.llm_specs = {
-            "provider": "openai",
+            "provider": "openai",  // actually settings.default_llm(): set LLM_PROVIDER_TYPE / LLM_PROVIDER_MODEL
             "model": "gpt-4o-mini",
             "temperature": 0.8,
             "max_tokens": 1500,

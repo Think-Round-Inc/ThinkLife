@@ -2,11 +2,12 @@
 Tavily Search Tool - Web search using Tavily API
 """
 
-import os
+import asyncio
 import logging
 from typing import Dict, Any
 
 from .base_tool import BaseTool, ToolResult
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +25,12 @@ class TavilySearchTool(BaseTool):
     
     def __init__(self, config: Dict[str, Any] = None):
         super().__init__(config)
-        self.api_key = (config or {}).get("api_key") or os.getenv("TAVILY_API_KEY")
+        self.api_key = (config or {}).get("api_key") or settings.tavily_api_key
         self.client = None
     
     def get_default_config(self) -> Dict[str, Any]:
         return {
-            "api_key": os.getenv("TAVILY_API_KEY", ""),
+            "api_key": settings.tavily_api_key or "",
             "max_results": 5,
             "search_depth": "basic",
             "include_answer": True,
@@ -63,8 +64,12 @@ class TavilySearchTool(BaseTool):
         
         try:
             logger.info(f"Searching: {query}")
-            
-            resp = self.client.search(
+
+            # TavilyClient.search() is a synchronous, blocking network call -
+            # asyncio.to_thread keeps it from blocking the event loop while
+            # it runs (Epic 5 / Story 5.1, Task 7.4).
+            resp = await asyncio.to_thread(
+                self.client.search,
                 query=query,
                 max_results=max_results,
                 search_depth=search_depth,

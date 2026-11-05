@@ -8,7 +8,7 @@ from .core_specs import (
     UserProfile, UserPreferences, TraumaContext, AIKnowledgeContext, UserContext,
     RequestContext, RequestMetadata, BrainRequest,
     ResponseMetadata, BrainResponse,
-    HealthStatus, BrainAnalytics
+    HealthStatus, ComponentHealth, BrainAnalytics
 )
 
 # Provider specs
@@ -52,7 +52,7 @@ __all__ = [
     "UserProfile", "UserPreferences", "TraumaContext", "AIKnowledgeContext", "UserContext",
     "RequestContext", "RequestMetadata", "BrainRequest",
     "ResponseMetadata", "BrainResponse",
-    "HealthStatus", "BrainAnalytics",
+    "HealthStatus", "ComponentHealth", "BrainAnalytics",
     
     # Provider
     "ProviderType", "ModelInfo", "ProviderInfo",

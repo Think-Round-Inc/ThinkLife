@@ -54,6 +54,13 @@ venv.bak/
 *.swo
 *~
 
+# mypy
+.mypy_cache/
+
+# Runtime-generated local data store
+data/*.sqlite3
+data/chroma.sqlite3
+
 # OS
 .DS_Store
 .DS_Store?

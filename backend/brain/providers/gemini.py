@@ -22,6 +22,19 @@ except ImportError:
     GenerateContentConfig = None
 
 
+def _is_retryable_gemini_error(exc: Exception) -> bool:
+    """
+    Classify a google-genai SDK exception as transport/server-level (worth
+    retrying, counts toward the circuit breaker) or request-level (retrying
+    won't help).
+    """
+    if not GEMINI_AVAILABLE:
+        return True
+    from google.genai import errors as genai_errors
+
+    return not isinstance(exc, genai_errors.ClientError)
+
+
 class GeminiProvider:
     """Google Gemini provider"""
     
@@ -147,7 +160,7 @@ class GeminiProvider:
             }
         except Exception as e:
             logger.error(f"Gemini request failed: {e}")
-            return self._error_response(str(e))
+            return self._error_response(str(e), retryable=_is_retryable_gemini_error(e))
     
     def _build_request_params(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """Build request parameters from config and kwargs"""
@@ -168,34 +181,40 @@ class GeminiProvider:
         
         return params
     
-    def _error_response(self, error: str) -> Dict[str, Any]:
-        """Create standardized error response"""
+    def _error_response(self, error: str, retryable: bool = True) -> Dict[str, Any]:
+        """
+        Create standardized error response. `retryable=False` signals the
+        resilience layer this is a request-level failure.
+        """
         return {
             "content": "",
-            "metadata": {"error": error, "provider": "gemini"},
+            "metadata": {"error": error, "provider": "gemini", "retryable": retryable},
             "success": False
         }
     
     async def health_check(self) -> Dict[str, Any]:
-        """Check provider health"""
-        try:
-            import time
-            start = time.time()
-            response = await self.generate_response(
-                [{"role": "user", "content": "Test"}], 
-                max_tokens=1
-            )
-            return {
-                "healthy": response.get("success", False),
-                "response_time": time.time() - start,
-                "provider": self.name,
-                "model": self.config.get("model", "unknown")
-            }
-        except Exception as e:
-            return {"healthy": False, "error": str(e), "provider": self.name}
+        """
+        Check provider health
+        """
+        from .protocol import check_provider_health_via_test_call
+        return await check_provider_health_via_test_call(self)
     
     async def close(self) -> None:
-        """Close provider"""
+        """
+        Closes the underlying `genai.Client`'s *async* HTTP client
+        (`client.aio.aclose()`) before dropping the reference.
+
+        `genai.Client.close()` (sync) only closes the client's synchronous
+        transport - per its own docstring, "it doesn't close the async
+        client" - and `generate_response()` above uses the async surface
+        (`self.client.aio.models.generate_content`), so the sync `close()`
+        would not release the connection pool actually in use here.
+        """
+        if self.client is not None:
+            try:
+                await self.client.aio.aclose()
+            except Exception:
+                logger.exception("Error closing Gemini client")
         self._initialized = False
         self.client = None
         logger.info("Gemini provider closed")

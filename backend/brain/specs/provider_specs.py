@@ -92,7 +92,7 @@ class GeminiProviderConfig(ProviderConfig):
 @dataclass
 class ProviderSpec:
     """Specification for LLM provider configuration that agents want to use"""
-    provider_type: str  # "openai", "gemini", "anthropic"
+    provider_type: str  # "openai", "gemini", "anthropic", "openrouter"
     model: Optional[str] = None
     temperature: float = 0.7
     max_tokens: int = 2000

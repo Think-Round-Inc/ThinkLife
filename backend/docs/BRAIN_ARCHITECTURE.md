@@ -66,7 +66,7 @@ graph TD
     *   Handles the loop of: Initialize -> Context -> Tools -> LLM -> Validation -> Response.
     *   Validates responses with confidence scoring (0.0-1.0 scale).
     *   Implements retry mechanism for low confidence responses (threshold: 0.75).
-    *   Manages provider interactions (OpenAI, etc.).
+    *   Manages provider interactions (OpenAI, Anthropic, Gemini, OpenRouter; selected via `LLM_PROVIDER_TYPE`).
 
 ### 5. Validation & Confidence Scoring
 *   **Role:** Quality assurance and response validation.
@@ -115,7 +115,7 @@ backend/
 │   ├── cortex/             # Orchestration (Cortex, Reasoning, Workflow)
 │   ├── data_sources/       # Vector DB, etc.
 │   ├── guardrails/         # Security, Session management
-│   ├── providers/          # LLM adapters (OpenAI, Anthropic)
+│   ├── providers/          # LLM adapters (OpenAI, Anthropic, Gemini, OpenRouter)
 │   ├── specs/              # Data classes & Interfaces
 │   └── tools/              # Tool definitions
 ├── evaluation/             # Estimators & Evaluators

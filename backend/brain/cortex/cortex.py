@@ -2,10 +2,11 @@
 Cortex - Generalized AI orchestration system
 """
 
+import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, AsyncGenerator, Optional, Union
 from dotenv import load_dotenv
 
 from ..specs import (
@@ -86,6 +87,12 @@ class CortexFlow:
         self.analytics = BrainAnalytics()
         self.start_time = datetime.now()
         self.active_executions: Dict[str, WorkflowExecution] = {}
+
+        # Task 7.2 (Epic 5 / Story 5.1): CortexFlow is a singleton, so
+        # `analytics` and `active_executions` are shared across every
+        # concurrent request.
+        self._analytics_lock = asyncio.Lock()
+        self._executions_lock = asyncio.Lock()
         
         logger.info("Cortex instance created")
 
@@ -128,6 +135,140 @@ class CortexFlow:
         request: BrainRequest
     ) -> Dict[str, Any]:
         """
+        Process agent request with agent specs and LLM request.
+
+        """
+        execution_id = request.id
+        start_time = time.time()
+        await self._record_request_start(execution_id)
+        result: Optional[Dict[str, Any]] = None
+
+        try:
+            result = await self._process_agent_request_inner(agent_specs, request, start_time)
+            return result
+        finally:
+            duration = time.time() - start_time
+            success = bool(result.get("success", True)) if result is not None else False
+            provider_type = agent_specs.provider.provider_type if agent_specs.provider else None
+            application = getattr(request.application, "value", request.application)
+            await self._record_request_end(execution_id)
+            await self._record_analytics(
+                success=success,
+                duration=duration,
+                provider_type=provider_type,
+                application=str(application) if application else None,
+            )
+
+    async def _record_request_start(self, execution_id: str) -> None:
+        """Track a request as in-flight."""
+        async with self._executions_lock:
+            self.active_executions[execution_id] = time.time()
+
+    async def _record_request_end(self, execution_id: str) -> None:
+        """Stop tracking a request as in-flight."""
+        async with self._executions_lock:
+            self.active_executions.pop(execution_id, None)
+
+    async def _record_analytics(
+        self,
+        *,
+        success: bool,
+        duration: float,
+        provider_type: Optional[str] = None,
+        application: Optional[str] = None,
+    ) -> None:
+        """
+        Update `self.analytics`
+        """
+        async with self._analytics_lock:
+            a = self.analytics
+            prev_total = a.total_requests
+            a.total_requests += 1
+
+            # Running average response time.
+            a.average_response_time = (
+                duration if prev_total == 0
+                else ((a.average_response_time * prev_total) + duration) / a.total_requests
+            )
+
+            prev_successes = round(a.success_rate * prev_total)
+            new_successes = prev_successes + (1 if success else 0)
+            a.success_rate = new_successes / a.total_requests
+            a.error_rate = 1.0 - a.success_rate
+
+            if provider_type:
+                a.provider_usage[provider_type] = a.provider_usage.get(provider_type, 0) + 1
+            if application:
+                a.application_usage[application] = a.application_usage.get(application, 0) + 1
+
+    async def process_agent_request_streaming(
+        self,
+        agent_specs: AgentExecutionSpec,
+        request: BrainRequest,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Streaming counterpart to `process_agent_request`.
+        """
+        execution_id = request.id
+        start_time = time.time()
+        await self._record_request_start(execution_id)
+        success = False
+
+        try:
+            await self._ensure_initialized()
+
+            if agent_specs.provider:
+                is_valid, errors, _ = self.provider_registry.check_provider_and_model(
+                    agent_specs.provider.provider_type,
+                    agent_specs.provider.model
+                )
+                if not is_valid:
+                    raise ValueError(f"Provider validation failed: {', '.join(errors)}")
+
+            for tool in agent_specs.tools:
+                if tool.enabled and not self.tool_registry.check_tool_available(tool.name):
+                    raise ValueError(f"Tool '{tool.name}' not available")
+
+            for ds in agent_specs.data_sources:
+                if ds.enabled and str(ds.source_type) == "vector_db":
+                    if not self.data_source_registry.check_data_source_available("vector_db"):
+                        raise ValueError("Data source 'vector_db' not available")
+
+            from dataclasses import asdict
+            ctx_dict = asdict(request.user_context) if hasattr(request.user_context, '__dataclass_fields__') else dict(request.user_context)
+            token = ctx_dict.get("token") or (request.metadata.dict().get("token") if request.metadata else None)
+
+            auth_result = await self.security_manager.validate_user(ctx_dict, token=token)
+            if not auth_result["valid"]:
+                raise PermissionError(f"Authentication failed: {auth_result.get('error')}")
+
+            if not self.security_manager.check_rate_limit(request.user_context.user_id, ctx_dict):
+                raise PermissionError("Rate limit exceeded")
+
+            async for chunk in self.workflow_engine.stream_execution(agent_specs, request):
+                yield chunk
+
+            success = True
+
+        finally:
+            duration = time.time() - start_time
+            provider_type = agent_specs.provider.provider_type if agent_specs.provider else None
+            application = getattr(request.application, "value", request.application)
+            await self._record_request_end(execution_id)
+            await self._record_analytics(
+                success=success,
+                duration=duration,
+                provider_type=provider_type,
+                application=str(application) if application else None,
+            )
+
+    async def _process_agent_request_inner(
+        self,
+        agent_specs: AgentExecutionSpec,
+        request: BrainRequest,
+        start_time: float,
+    ) -> Dict[str, Any]:
+        """
         Process agent request with agent specs and LLM request
         
         Flow:
@@ -138,8 +279,6 @@ class CortexFlow:
         5. If reasoning not enabled - invoke execute_agent_request (workflow engine)
         6. Return response from workflow engine
         """
-        start_time = time.time()
-        
         # Initialize Langfuse if needed
         if agent_specs.processing and agent_specs.processing.eval:
             if LANGFUSE_AVAILABLE:
@@ -178,7 +317,7 @@ class CortexFlow:
             ctx_dict = asdict(request.user_context) if hasattr(request.user_context, '__dataclass_fields__') else dict(request.user_context)
             token = ctx_dict.get("token") or (request.metadata.dict().get("token") if request.metadata else None)
             
-            auth_result = self.security_manager.validate_user(ctx_dict, token=token)
+            auth_result = await self.security_manager.validate_user(ctx_dict, token=token)
             if not auth_result["valid"]:
                 return self._create_error_response(f"Authentication failed: {auth_result.get('error')}", start_time)
             
@@ -464,6 +603,65 @@ class CortexFlow:
     ) -> Dict[str, Any]:
         return await self.execute_plan(plan, request, None)
     
+    async def get_health_status(self) -> Dict[str, Any]:
+        """
+        Aggregate health of the Brain and its dependencies.
+
+        Returns a dict matching the `HealthStatus` shape already defined in
+        `brain/specs/core_specs.py` (overall/providers/system/timestamp).
+
+        This is the fix (Epic 5 / Story 5.1, "health check endpoints".
+        """
+        from ..providers.provider_registry import PROVIDER_CONFIGS
+        from ..resilience import all_circuit_breaker_status
+
+        circuit_breaker_status = all_circuit_breaker_status()
+
+        provider_health: Dict[str, Dict[str, Any]] = {}
+        for provider_type in PROVIDER_CONFIGS:
+            is_valid, errors, _ = self.provider_registry.check_provider_and_model(provider_type)
+            entry = {"available": is_valid, "errors": errors}
+            # Circuit breakers are created lazily (brain/resilience/circuit_breaker.py)
+            # on first real generate_response() call, so a provider that's
+            # never been called yet simply won't have an entry here.
+            if provider_type in circuit_breaker_status:
+                entry["circuit_breaker"] = circuit_breaker_status[provider_type]
+            provider_health[provider_type] = entry
+
+        workflow_ready = bool(self.workflow_engine and getattr(self.workflow_engine, "_initialized", False))
+        system = {
+            "initialized": self._initialized,
+            "workflow_engine_ready": workflow_ready,
+            "reasoning_engine_ready": self.reasoning_engine is not None,
+            "active_executions": len(self.active_executions),
+            "uptime_seconds": (datetime.now() - self.start_time).total_seconds(),
+        }
+
+        any_provider_available = any(p["available"] for p in provider_health.values())
+        any_circuit_open = any(cb.get("state") == "open" for cb in circuit_breaker_status.values())
+
+        if self._initialized and any_provider_available and not any_circuit_open:
+            overall = "healthy"
+        elif self._initialized and (any_provider_available or any_circuit_open):
+            overall = "degraded"  # Brain is up, but either no provider is usable or a circuit is open
+        else:
+            overall = "unhealthy"
+
+        return {
+            "overall": overall,
+            "providers": provider_health,
+            "system": system,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    async def get_analytics(self) -> Dict[str, Any]:
+        """
+        Return current Brain analytics (`BrainAnalytics`, see
+        `brain/specs/core_specs.py`) as a plain dict.
+        """
+        from dataclasses import asdict
+        return asdict(self.analytics)
+
     async def shutdown(self):
         logger.info("Shutting down CortexFlow...")
         try:

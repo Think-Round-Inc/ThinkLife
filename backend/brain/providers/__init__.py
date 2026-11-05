@@ -2,7 +2,9 @@
 Brain Providers - AI provider implementations for ThinkLife Brain
 """
 
-__all__ = []
+from .protocol import LLMProviderProtocol
+
+__all__ = ["LLMProviderProtocol"]
 
 # Provider registry
 try:
@@ -47,17 +49,26 @@ except ImportError as e:
 
 # Provider factory for easy instantiation
 def create_provider(provider_type: str, config: dict = None):
-    """Factory function to create providers with default settings"""
+    """
+    Factory function to create providers with default settings.
+
+    The returned object is wrapped in `ResilientProvider`
+    (`brain/resilience/provider_resilience.py`, Task 8), which adds
+    retry-with-backoff and a per-provider-type circuit breaker around
+    `generate_response()` calls. This is transparent to callers -
+    `WorkflowEngine`/`managed_provider` use the same `initialize()` /
+    `generate_response()` / `close()` / `health_check()` interface either way.
+    """
     if config is None:
         config = {}
-
+    
     provider_map = {
         "openai": (OpenAIProvider, create_openai_provider),
-        "gemini": (GeminiProvider, create_gemini_provider),
+        "gemini": (GeminiProvider, create_gemini_provider), 
         "anthropic": (AnthropicProvider, create_anthropic_provider),
         "openrouter": (OpenRouterProvider, create_openrouter_provider),
     }
-    
+
     if provider_type not in provider_map:
         raise ValueError(f"Unknown provider type: {provider_type}. Available: {list(provider_map.keys())}")
     
@@ -66,7 +77,10 @@ def create_provider(provider_type: str, config: dict = None):
     if provider_class.__name__ not in __all__:
         raise ImportError(f"{provider_type} provider not available. Check dependencies.")
     
-    return factory_func(config)
+    inner_provider = factory_func(config)
+
+    from ..resilience import ResilientProvider
+    return ResilientProvider(inner_provider)
 
 # Get available providers
 def get_available_providers():

@@ -8,11 +8,10 @@ SDK dependency needed.
 """
 
 import logging
-import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from .openai import OpenAIProvider
-from .provider_registry import get_provider_registry
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,29 +27,18 @@ class OpenRouterProvider(OpenAIProvider):
 
     async def initialize(self) -> bool:
         self.config.setdefault("base_url", OPENROUTER_BASE_URL)
-        if not self.config.get("api_key"):
-            self.config["api_key"] = os.getenv("OPENROUTER_API_KEY")
-        if not self.config["api_key"]:
-            # Fail here rather than delegating to super(): OpenAIProvider's own
-            # initialize() falls back to OPENAI_API_KEY when its resolved key is
-            # falsy, which would silently use the wrong key against OpenRouter.
-            logger.error("OpenRouter API key missing")
-            return False
+        if "api_key" not in self.config:
+            self.config["api_key"] = settings.openrouter_api_key
         return await super().initialize()
 
     def _validate_config(self) -> bool:
+        from .provider_registry import get_provider_registry
         registry = get_provider_registry()
         is_valid, errors, _ = registry.check_provider_and_model("openrouter", self.config.get("model"))
         if not is_valid:
             logger.error(f"Validation failed: {'; '.join(errors)}")
             return False
         return True
-
-    async def generate_response(self, messages: List[Dict[str, str]], **kwargs: Any) -> Dict[str, Any]:
-        result = await super().generate_response(messages, **kwargs)
-        if result.get("metadata", {}).get("provider") == "openai":
-            result["metadata"]["provider"] = "openrouter"
-        return result
 
     def _error_response(self, error: str) -> Dict[str, Any]:
         return {"content": "", "metadata": {"error": error, "provider": "openrouter"}, "success": False}

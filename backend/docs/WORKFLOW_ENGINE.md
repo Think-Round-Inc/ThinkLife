@@ -51,9 +51,9 @@ graph TD
     *   **`execute_plan`:** Entry point. Takes an `ExecutionPlan` and runs the graph.
     *   **Nodes:**
         *   `_query_data_sources_node`: Fetches data from Vector DB, etc.
-        *   `_execute_tools_node`: Runs MCP tools.
+        *   `_execute_tools_node`: Runs registered tools (e.g. Tavily search) via `run_tool_with_timeout` (see `brain/lifecycle.py`), which guarantees each tool's `initialize()`/`close()` pair up and bounds execution with a timeout, even on error.
         *   `_build_messages_node`: Constructs the final prompt (System + Context + User + Retry Feedback if applicable).
-        *   `_call_provider_node`: Invokes the LLM (OpenAI, etc.).
+        *   `_call_provider_node`: Invokes the LLM (OpenAI, etc.) via `managed_provider` (see `brain/lifecycle.py`), which guarantees the provider client is closed even if initialization fails or generation raises.
         *   `_validate_response_node`: Calculates confidence score and validates response quality.
         *   `_finalize_node`: Replaces low confidence responses with fallback if needed.
 
@@ -160,3 +160,16 @@ To add a new step (e.g., "Safety Check Node"):
 1.  Define `_safety_check_node` method.
 2.  Add it to the graph in `_build_graph`: `workflow.add_node("safety_check", self._safety_check_node)`.
 3.  Update edges to route through it.
+
+## Streaming (Task 10)
+
+`WorkflowEngine.stream_execution()` is a separate, parallel entry point to
+`execute_plan()` - not a graph node, and not routed through
+`_validate_response_node` / `_finalize_node` at all. It reuses
+`_initialize_node`, `_query_data_sources_node`, `_execute_tools_node`, and
+`_build_messages_node` directly, then streams the provider's response
+instead of running the confidence-scoring validate/retry loop. This is
+permanent, not a shortcut: once tokens are sent to a client, there's no
+sound way to discard them and "retry" with a different response. See
+`brain/lifecycle.py` and the README's "Streaming (SSE)" section for the
+full chunk-delivery path from provider to client.

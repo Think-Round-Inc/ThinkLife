@@ -20,7 +20,7 @@ Usage:
 
 import logging
 import uuid
-from typing import Dict, Any, Optional
+from typing import Any, AsyncGenerator, Dict, Optional
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -270,7 +270,96 @@ class ZoeService:
                 "metadata": {"agent": "zoe", "error": True},
                 "timestamp": datetime.now().isoformat()
             }
-    
+
+    async def stream_message(
+        self,
+        message: str,
+        user_id: str = "anonymous",
+        session_id: Optional[str] = None,
+        user_context: Optional[Dict[str, Any]] = None,
+        application: str = "chatbot"
+    ) -> AsyncGenerator[str, None]:
+        """
+        Streaming counterpart to `process_message` (Task 10.2/10.4).
+
+        Deliberately mirrors `process_message`'s pre-processing exactly -
+        session resolution, and critically the **safety redirect check**
+        (`ZoeCore.create_brain_request`'s `redirect_info`, which can
+        short-circuit a harmful message before it ever reaches an LLM) - so
+        the streaming path is held to the same safety bar as the
+        non-streaming one. The only difference is delegating to
+        `ZoeAgent.stream_response()` (yielding tokens) instead of
+        `process_request()` (returning one final dict), and that it does
+        NOT apply the confidence-based fallback substitution
+        `process_message` does above (step 6) - consistent with Task 10.3's
+        design: once tokens are streamed, there's no sound way to swap in a
+        different response after the fact.
+
+        `ZoeAgent.stream_response()` handles its own assistant-message
+        conversation-history update internally, so this method only adds
+        the user's message to history (matching `process_message`'s
+        ordering), not the assistant's.
+        """
+        if not self.initialized:
+            await self.initialize()
+
+        if user_context is None:
+            user_context = {}
+        if not session_id:
+            session_id = user_context.get("session_id")
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            logger.info(f"Generated new conversation session_id: {session_id}")
+        user_context["session_id"] = session_id
+
+        request_data = self.zoe_core.create_brain_request(
+            message=message,
+            user_context=user_context,
+            application=application,
+            session_id=session_id,
+            user_id=user_id
+        )
+
+        redirect_info = request_data.get("redirect_info")
+        if redirect_info and redirect_info.get("should_redirect"):
+            self.zoe_core.conversation_manager.add_message(
+                session_id=request_data["session_id"], role="user", content=message
+            )
+            self.zoe_core.conversation_manager.add_message(
+                session_id=request_data["session_id"], role="assistant",
+                content=redirect_info["response"],
+                metadata={"redirected": True, "harmful": redirect_info.get("is_harmful", False)},
+            )
+            # Deliver the safety redirect as a single chunk - same content
+            # process_message would return in one shot, just streamed as
+            # one piece rather than token-by-token (there's nothing to
+            # stream from a provider here; no LLM call happens at all).
+            yield redirect_info["response"]
+            return
+
+        from brain.specs import BrainRequest, ApplicationType
+        from .helpers import create_user_context
+
+        brain_request = BrainRequest(
+            id=f"zoe_{datetime.now().timestamp()}",
+            application=ApplicationType(application),
+            message=message,
+            user_context=create_user_context(
+                user_id=user_id,
+                session_id=request_data["session_id"],
+                user_context=user_context
+            )
+        )
+
+        self.zoe_core.conversation_manager.add_message(
+            session_id=request_data["session_id"], role="user", content=message,
+            metadata={"application": application},
+        )
+
+        logger.info(f"Streaming message through plugin for session: {request_data['session_id']}")
+        async for chunk in self.zoe_agent.stream_response(brain_request):
+            yield chunk
+
     def _get_low_confidence_response(self, message: str, confidence: float) -> str:
         """
         Generate empathetic fallback response for low confidence situations

@@ -3,15 +3,16 @@ Session Manager for Keycloak Authentication
 Handles unified session tracking from login to logout
 """
 
+import asyncio
 import logging
-import os
 import uuid
 import jwt
 import requests
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
-from functools import lru_cache
+
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +55,9 @@ class UserSession:
 class SessionManager:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or self._get_default_config()
-        self.keycloak_url = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
-        self.keycloak_realm = os.getenv("KEYCLOAK_REALM", "thinklife")
-        self.keycloak_client_id = os.getenv("KEYCLOAK_CLIENT_ID", "thinklife-frontend")
+        self.keycloak_url = settings.keycloak_url
+        self.keycloak_realm = settings.keycloak_realm
+        self.keycloak_client_id = settings.keycloak_client_id
         
         self.sessions: Dict[str, UserSession] = {}
         self.user_sessions: Dict[str, list] = {}
@@ -74,8 +75,22 @@ class SessionManager:
             "user_context": {"include_roles": True, "include_email": True, "include_profile": True}
         }
     
-    @lru_cache(maxsize=1)
-    def _get_public_key(self) -> Optional[str]:
+    async def _get_public_key(self) -> Optional[str]:
+        """
+        Fetch (and cache) the Keycloak realm's public key.
+
+        Two fixes here (Epic 5 / Story 5.1, Task 7.4, found during a later
+        audit): this was previously a sync method decorated with
+        `@lru_cache(maxsize=1)` that called `requests.get(...)` directly.
+        That meant (a) the blocking HTTP call ran on the event loop inside
+        `KeycloakAuthMiddleware.dispatch`, which is on the critical path of
+        *every* authenticated request, and (b) `lru_cache` on a
+        zero-argument instance method caches forever for that instance,
+        which silently made the manual `public_key_cache_expiry` TTL logic
+        below unreachable dead code after the first successful call. Now the
+        network call is offloaded via `asyncio.to_thread`, and the existing
+        manual TTL cache is what actually governs re-fetching.
+        """
         try:
             cache_key = f"{self.keycloak_url}/{self.keycloak_realm}"
             if cache_key in self.public_key_cache:
@@ -83,7 +98,7 @@ class SessionManager:
                     return self.public_key_cache[cache_key]
             
             url = f"{self.keycloak_url}/realms/{self.keycloak_realm}"
-            resp = requests.get(url, timeout=5)
+            resp = await asyncio.to_thread(requests.get, url, timeout=5)
             resp.raise_for_status()
             
             key = resp.json().get("public_key")
@@ -96,7 +111,7 @@ class SessionManager:
             logger.warning("Failed to fetch Keycloak public key", exc_info=True)
             return None
     
-    def validate_token(self, token: str) -> Dict[str, Any]:
+    async def validate_token(self, token: str) -> Dict[str, Any]:
         if not token: return {"valid": False, "error": "No token"}
         
         try:
@@ -107,7 +122,7 @@ class SessionManager:
             if issuer != expected:
                 return {"valid": False, "error": f"Invalid issuer: {issuer}"}
             
-            key = self._get_public_key()
+            key = await self._get_public_key()
             if not key:
                 logger.warning("Verifying without signature (key missing)")
                 decoded = jwt.decode(token, options={"verify_signature": False, "verify_exp": True})
@@ -132,9 +147,9 @@ class SessionManager:
         except Exception as e:
             return {"valid": False, "error": str(e)}
     
-    def create_session(self, token: str, user_info: Optional[Dict] = None) -> Dict[str, Any]:
+    async def create_session(self, token: str, user_info: Optional[Dict] = None) -> Dict[str, Any]:
         if not user_info:
-            val = self.validate_token(token)
+            val = await self.validate_token(token)
             if not val["valid"]: return {"success": False, "error": val["error"]}
             user_info = val["user"]
         
@@ -181,7 +196,7 @@ class SessionManager:
     def get_session(self, session_id: str) -> Optional[UserSession]:
         return self.sessions.get(session_id)
     
-    def validate_session(self, token: str = None, user_context: Dict = None) -> Dict[str, Any]:
+    async def validate_session(self, token: str = None, user_context: Dict = None) -> Dict[str, Any]:
         if not token and user_context:
             sid = user_context.get("session_id")
             sess = self.sessions.get(sid)
@@ -192,7 +207,7 @@ class SessionManager:
         
         if not token: return {"valid": False, "error": "No token"}
         
-        val = self.validate_token(token)
+        val = await self.validate_token(token)
         if not val["valid"]: return {"valid": False, "error": val["error"]}
         
         user_info = val["user"]
@@ -200,7 +215,7 @@ class SessionManager:
         
         sid = self.token_to_session.get(state) if state else None
         if not sid or not self.sessions.get(sid, UserSession("", "", datetime.min, datetime.min)).is_active():
-            res = self.create_session(token, user_info)
+            res = await self.create_session(token, user_info)
             if not res["success"]: return {"valid": False, "error": res["error"]}
             sid = res["session_id"]
             ctx = res["user_context"]

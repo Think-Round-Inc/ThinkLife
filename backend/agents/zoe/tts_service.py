@@ -6,13 +6,11 @@ Handles high-quality speech generation using OpenAI TTS API
 
 import logging
 import base64
-import os
 from typing import Optional
 
 import httpx
-from dotenv import load_dotenv
 
-load_dotenv()
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +18,7 @@ class TTSService:
     """Text-to-Speech service using OpenAI TTS API"""
     
     def __init__(self):
-        self.api_key = os.getenv("OPENAI_API_KEY")
+        self.api_key = settings.openai_api_key
         self.base_url = "https://api.openai.com/v1/audio/speech"
         self.voice = "nova"  # High-quality female voice
         self.model = "tts-1-hd"  # High-definition model
