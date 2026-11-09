@@ -1,183 +1,134 @@
-# ThinkLife
+# US6.2: Structured release governance
 
-![Overall Commits](https://img.shields.io/github/commit-activity/y/Think-Round-Inc/ThinkLife)
-![Collaborators](https://img.shields.io/github/contributors/Think-Round-Inc/ThinkLife)
-![TypeScript](https://img.shields.io/badge/typescript-5.0+-blue?logo=typescript&logoColor=white)
-![Python](https://img.shields.io/badge/python-3.9+-blue?logo=python&logoColor=white)
-![Pre-releases](https://img.shields.io/github/v/release/Think-Round-Inc/ThinkLife?include_prereleases&label=pre-releases&sort=semver)
-![License](https://img.shields.io/github/license/Think-Round-Inc/ThinkLife)
-![Version](https://img.shields.io/badge/version-0.7.35-yellow)
+**Epic:** 6.2 — structured release governance so that deployments are traceable and reversible  
+**Author:** Feifan Li  
+**Branch:** `Feifan`  
+**PR:**
 
-**An experimental platform for local development and internal testing of AI-driven experiences at Think Round.**
+## User story
 
----
+As a release owner, I want structured release governance so that deployments are traceable and reversible.
 
-## **Platform Overview**
+## Summary of changes
 
-ThinkLife is currently used for **local development and internal testing only**. It serves as a sandbox environment to design, refine, and validate new AI-driven experiences before they are exposed to real users. This platform showcases **pre-release and beta versions** of AI applications that are still under active development and review.
+Implemented six release-governance tasks: model/prompt version records, dependency inventories, environment-change validation, a deployment checklist, a rollback plan, and post-release smoke tests. The tools record evidence and report failures; they do not deploy, fix application defects, or roll back services automatically.
 
-Only the most stable, responsible, and impactful of these applications will move forward into the first public web release after formal approval from Think Round's leadership.
+## Files touched
 
-### **Inside Our AI**
-See how AI enhances our healing rooms, arts programs, and community initiatives with trauma-informed approaches. Explore our philosophy of transparent, ethical AI implementation.
+Compared with the agreed `arvind` baseline (`f488f9ff18b459fff267d3e080a0e34fc769aeb4`):
 
-### **Healing Rooms** 
-Experience trauma-informed AI support through our empathetic companion Zoe, designed with ACE assessment integration, crisis detection, and personalized healing journeys.
+| File | Change | Purpose |
+| --- | --- | --- |
+| `.gitignore` | Changed | Ignore generated release evidence and frontend metadata. |
+| `README.md` | Changed | Link to US6.2 documentation. |
+| `scripts/release_common.py` | New | Shared Git, hashing, inventory and dotenv utilities. |
+| `scripts/generate_release_manifest.py` | New | Generate model, prompt, dependency and release records. |
+| `scripts/validate_release_env.py` | New | Validate ENV configuration and compare previous/current names. |
+| `scripts/post_release_smoke.py` | New | Verify deployed HTTP endpoints and release identity. |
+| `tests/release/test_release.py` | New | Unit tests for release tooling. |
+| `docs/release/environment-contract.json` | New | Reviewed ENV rules and source references. |
+| `docs/release/BASELINE_RELEASE.md` | New | Historical preview (not release approval). |
+| `docs/release/README.md` | New | US6.2 overview and acceptance evidence. |
+| `docs/release/DEPLOYMENT_CHECKLIST.md` | New | Required pre-/post-deployment steps. |
+| `docs/release/RELEASE_RECORD.md` | New | Template for approval and evidence links. |
+| `docs/release/ROLLBACK_PLAN.md` | New | Operator-controlled recovery procedure. |
+| `docs/release/smoke-results.json` | New | Historical local smoke-test snapshot. |
+| `US6.2-Team-Runbook.md` | New | Operator commands and troubleshooting. |
+| `.github/workflows/release-governance.yml` | New | Offline CI checks and candidate artifact upload. |
+| `.github/workflows/post-release-smoke.yml` | New | Manual/reusable deployed-service smoke workflow. |
+| `frontend/next-env.d.ts` | Changed | Existing branch difference; not required for US6.2. |
 
-### **Exterior Spaces**
-Discover space that preserve human creativity while leveraging technology for accessibility and connection.
+The `frontend/next-env.d.ts` difference came from a later branch commit, not the initial US6.2 implementation. Review it separately when integrating.
 
-**We believe in AI transparency**: showing, not just telling, how technology can serve humanity with purpose and heart.
+## Pseudocode
 
----
+**Manifest and dependency inventory** (`generate_release_manifest.py`):
 
-## **Meet Zoe: Our AI Companion**
+```text
+Read release ID and source commit; check working-tree state.
+Collect configured/model-source references, prompt-source SHA-256 hashes,
+Python requirements, frontend package/lock data and container tags.
+If --require-clean and the tree is dirty: fail.
+Write .release/manifest.json and .release/release.md.
+If requested, write frontend/public/release.json before the build.
+```
 
-### **Definition & Purpose**
-**Zoe** is Think Round's trauma-informed AI companion, designed to provide empathetic support while demonstrating responsible AI integration in healing contexts. Named to represent life and growth, Zoe serves as both a supportive companion and a transparent example of how AI can be thoughtfully designed to serve human wellbeing.
+**Environment validation** (`validate_release_env.py`):
 
-### **What Makes Zoe Different**
+```text
+Check source ENV names against environment-contract.json.
+Unless --check-contract: read current backend/frontend ENV files,
+validate required/configured values, and compare genuine prior files if given.
+Report added/removed/changed variable NAMES, not secret values.
+Write JSON findings; fail on errors (or warnings with --strict).
+```
 
-Zoe is built with trauma-informed care principles from the ground up, ensuring every interaction is safe, supportive, and personalized to your unique healing journey.
+**Post-release checks** (`post_release_smoke.py`):
 
-**Personalized Support**
-- Responses are tailored based on your Adverse Childhood Experiences (ACE) assessment
-- Understands specific trauma areas and responds with appropriate sensitivity
-- Maintains conversation history to provide contextual, meaningful interactions
+```text
+Validate target URLs, release ID and full expected commit SHA.
+Check seven frontend/backend/Brain/Zoe/Keycloak endpoints with bounded retries.
+Require valid HTTP 200 JSON and expected healthy/release fields.
+Write .release/smoke-results.json; return failure if any check fails.
+```
 
-**Safety First**
-- Crisis detection for immediate connection to professional resources
-- Harmful content filtering to prevent re-traumatization
-- Special protections for minor users
-- Professional boundaries with clear guidance on when to seek additional help
+**Approval and rollback** (checklist and rollback plan):
 
-**Always Available**
-- 24/7 access to empathetic support
-- Consistent, reliable responses
-- Avatar mode with dynamic expressions and voice interaction
-- Real-time processing for smooth, natural conversations
+```text
+Record candidate and previous known-good artifacts, configuration and backups.
+Deploy using the team's hosting process; run smoke and manual checks.
+Approve only when required checks pass and the release owner signs off.
+On failure, preserve evidence and follow an operator-approved rollback;
+verify the restored release with its own ID and commit SHA.
+```
 
-### **How You Experience Zoe**
+## Setup
 
-**Start Your Journey**
-- Complete the ACE assessment for personalized support
-- Users with higher trauma scores are guided to appropriate resources
-- Choose between chat support or educational content based on your needs
+- **Requirements:** Git and Python 3.11, run from the repository root. US6.2 scripts need no new Python packages; live deployment/build uses the application's existing dependencies.
+- **Configuration:** No new environment variables. See [environment-contract.json](environment-contract.json); current files default to `backend/.env` and `frontend/.env.local`. Never commit secrets.
+- **Services:** Offline tools need no running application. Live smoke tests require reachable frontend, backend and Keycloak. No database migrations are introduced by US6.2.
 
-**Interact Naturally**
-- Text-based conversations with empathetic, validating responses
-- Optional avatar mode with facial expressions and voice
-- Conversations remember context and build on previous interactions
+## How to run
 
-**Stay Safe**
-- Immediate crisis detection and resource connection
-- Clear guidance on professional help when needed
-- Privacy-first design with secure data handling
-- Transparent about AI capabilities and limitations
+Run from the **repository root**. See [US6.2-Team-Runbook.md](../../US6.2-Team-Runbook.md) for Windows CMD examples, troubleshooting and release sign-off.
 
----
+```bash
+python -m unittest discover -s tests/release -v
+python scripts/validate_release_env.py --check-contract
+python scripts/generate_release_manifest.py --release-id 0.7.0-rc1 --openai-model gpt-4o-mini
+python scripts/validate_release_env.py
+```
 
-## **Current & Future Agents**
+The example release ID and model must be replaced with the actual deployment values. The first command should finish with `Ran 17 tests` and `OK`. Contract-only validation checks source coverage, **not** deployed settings. For historical ENV changes, supply genuine previous backend/frontend ENV files via `--previous-backend-env` and `--previous-frontend-env`; use `--strict` only when warnings must also fail the gate.
 
-ThinkLife is expanding beyond Zoe to include additional AI agents designed for specific purposes:
+After committing the final candidate, generate clean metadata **before** building the frontend:
 
-### **Currently Available**
-**Zoe** - Trauma-informed AI companion providing empathetic support and emotional wellbeing assistance in healing rooms.
+```bash
+python scripts/generate_release_manifest.py --release-id 0.7.0-rc1 --openai-model gpt-4o-mini --require-clean --publish-frontend
+```
 
-### **Under Construction**
-**Storytelling Agent** - Interactive narrative experiences to support healing through creative expression and shared stories.
+A successful clean run reports `dirty=False`. Do not edit the dirty flag or treat a dirty candidate as deployment-ready. Deploy the matching artifact, then run `post_release_smoke.py` with `--release-id`, `--expected-commit` (the deployed 40-character SHA), and the correct service URLs. Exit `0` means all seven checks passed; exit `1` means at least one failed.
 
-**FAQ Agent** - Intelligent question-answering system to help users navigate Think Round programs and resources.
+**Evidence locations:** Local outputs are in ignored `.release/`. The [successful Release governance workflow](https://github.com/Think-Round-Inc/ThinkLife/actions/runs/42542535840) uploaded candidate `manifest.json`, `release.md` and **contract-only** `env-validation.json` as an Actions Artifact. This is not a live-deployment pass. A separate manually invoked/reusable smoke workflow uploads smoke results when produced. The committed [smoke snapshot](smoke-results.json) is historical and records `brain_health` HTTP 500, not a passing release.
 
-**Onboarding Agent** - Agent for Onboarding new interns exploring Think Round's healing spaces and community.
+## Acceptance criteria mapping
 
-Each agent is being developed with the same trauma-informed, safety-first approach that defines Zoe, ensuring consistent quality, may vary purpose and care across all AI interactions.
+| US6.2 task | Implementation | Evidence / status |
+| --- | --- | --- |
+| Document model & prompt versions | Manifest generator and prompt hashes | `manifest.json`, `release.md` — implemented |
+| Update dependency list | Requirements, frontend lock and container inventory | Generated `release.md` — implemented |
+| Validate environment changes | ENV validator and contract | `env-validation.json`; comparison requires genuine prior ENV files — implemented |
+| Prepare deployment checklist | `DEPLOYMENT_CHECKLIST.md` and `RELEASE_RECORD.md` | Templates available; release-specific sign-off pending |
+| Prepare rollback plan | `ROLLBACK_PLAN.md` | Procedure documented; actual rehearsal not evidenced |
+| Enable post-release smoke tests | Smoke CLI and Actions workflow | Seven checks implemented; historical live report has a failure |
 
----
+## Dependencies and conflicts
 
-## **What We're Exploring**
+Depends on the `arvind` baseline, Git/Python and the existing application interfaces. Live tests depend on running services and correct deployment metadata. No other story IDs were supplied. Application-owned health defects, deployment hosting decisions and merge conflicts must be resolved by their respective owners; US6.2 does not change core application behavior.
 
-ThinkLife demonstrates the potential for thoughtful AI integration across therapeutic and creative contexts:
+## Known limitations
 
-- **Arts Therapy Enhancement**: AI-assisted creative expression and healing through art
-- **Community Connection**: Technology that strengthens bonds between healing community members
-- **Accessible Education**: Personalized learning paths for trauma recovery and personal growth
-- **Healing Room Experiences**: Ambient AI support that adapts to individual needs
-
-Our approach prioritizes human agency, ensuring technology amplifies the healing arts rather than replacing human connection.
-
----
-
-## **Technology Behind ThinkLife**
-
-ThinkLife uses modern web technologies and AI systems to deliver safe, responsive, and personalized experiences:
-
-**User Experience**
-- Smooth animations and transitions for natural interactions
-- Responsive design that works on all devices
-- Real-time voice interaction with professional-quality synthesis
-- Accessible interface following inclusive design principles
-
-**AI Systems**
-- Advanced language models for natural conversation
-- Context-aware responses that learn from interactions
-- Intelligent confidence scoring to ensure quality responses
-- Multi-layered validation for safety and appropriateness
-
-**Security & Privacy**
-- Secure authentication and data protection
-- Trauma-informed content filtering
-- Privacy-first architecture
-- Transparent AI decision-making processes
-
----
-
-*For technical setup and development information, see [LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)*
-
-## **Our AI Philosophy**
-
-### **Transparency First**
-Users deserve to understand how AI works in their experience. ThinkLife openly demonstrates our AI systems, showing not just telling how technology can serve healing with purpose and heart.
-
-### **Human-Centered Design**
-Technology serves people, not the other way around. Every AI feature is designed to amplify human connection and support healing journeys, never to replace human care and compassion.
-
-### **Ethical Implementation**
-Our AI systems are built with **trauma-informed principles**, **privacy protection**, and **inclusive design** from the ground up.
-
-### **Experimental and Evolving**
-As a development sandbox, ThinkLife allows us to test, learn, and refine AI applications before they reach real users. We continuously improve based on testing, feedback, and ethical review.
-
----
-
-## **Contributing to Responsible AI**
-
-ThinkLife is an **experimental platform** currently in active development for internal testing and refinement. Applications developed here undergo rigorous review before potential public release.
-
-**What This Means:**
-- Features may change or be removed as we test and learn
-- Not all experimental features will move to public release
-- Only stable, responsible, and impactful applications advance to production
-- Formal approval from Think Round leadership required before public deployment
-
-We're committed to building AI tools that genuinely serve healing and transformation, taking the time needed to get it right.
-
----
-
-## **Learn More**
-
-- **Think Round Website**: [thinkround.org](https://thinkround.org)
-- **Contact Us**: For questions about our AI integration approach
-- **Documentation**: Explore our technical implementation details
-- **Community**: Join conversations about responsible AI in healing through info@thinkround.org
-
----
-
-**Think Round Inc. © 2026**  
-*Experimental AI platform by the Generative AI Engineers team*  
-*Building technology with purpose, transparency, and heart*
-
-## Release governance (User Story 6.2)
-
-See [release governance](docs/release/README.md) for version/dependency evidence,
-environment validation, deployment and rollback checklists, and post-release smoke tests.
+- The historical `/api/brain/health` failure (`HTTP 500`, missing `CortexFlow.get_health_status()` in the inspected baseline) remains a release blocker until the application owner verifies a fix. Never mark it PASS without a passing live check.
+- The successful offline CI run does not prove actual ENV differences, working credentials, healthy deployed services, login/chat behavior or a successful rollback.
+- Model aliases and source-file hashes are not immutable provider snapshot IDs; unpinned Python requirements and mutable container tags also limit reproducibility. Retain tested build artifacts and actual dependency/image versions.
+- Smoke checks use the current backend identity expectation (`0.7.0`); update the check with an intentional app version change. Deployment, rollback and post-release workflow invocation remain operator-controlled.
