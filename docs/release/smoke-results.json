@@ -1,0 +1,52 @@
+{
+  "release_id": "0.7.0-rc1",
+  "expected_commit": "b7dd584d4c21e0133b3ab920752d747e97fd7d1c",
+  "checked_at": "2026-10-11T20:20:16.364546+00:00",
+  "checks": [
+    {
+      "name": "frontend_health",
+      "url": "http://localhost:3000/api/health",
+      "passed": true,
+      "attempts": 1
+    },
+    {
+      "name": "frontend_release",
+      "url": "http://localhost:3000/release.json",
+      "passed": true,
+      "attempts": 1
+    },
+    {
+      "name": "backend_identity",
+      "url": "http://localhost:8000/",
+      "passed": true,
+      "attempts": 1
+    },
+    {
+      "name": "backend_health",
+      "url": "http://localhost:8000/health",
+      "passed": true,
+      "attempts": 1
+    },
+    {
+      "name": "brain_health",
+      "url": "http://localhost:8000/api/brain/health",
+      "passed": false,
+      "attempts": 3,
+      "reason": "HTTP 500"
+    },
+    {
+      "name": "zoe_health",
+      "url": "http://localhost:8000/api/zoe/health",
+      "passed": true,
+      "attempts": 1
+    },
+    {
+      "name": "keycloak_oidc",
+      "url": "http://localhost:8080/realms/thinklife/.well-known/openid-configuration",
+      "passed": true,
+      "attempts": 1
+    }
+  ],
+  "passed": false,
+  "scope": "Availability and frontend commit check; not LLM generation, login, or backend commit attestation."
+}

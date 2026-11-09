@@ -107,3 +107,6 @@ ehthumbs.db
 .cache/
 
 checkpoints/
+# Generated release evidence and build metadata (never commit secrets)
+.release/
+frontend/public/release.json
