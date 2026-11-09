@@ -36,6 +36,23 @@
         "backend/agents/zoe/utils/knowledge_index_builder.py"
       ]
     },
+    "EVAL_JUDGE_MODEL": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/evaluators/base.py",
+        "backend/evaluators/runner.py"
+      ]
+    },
+    "EVAL_JUDGE_PROVIDER": {
+      "required": false,
+      "type": "string",
+      "default": "openai",
+      "sources": [
+        "backend/evaluators/base.py",
+        "backend/evaluators/runner.py"
+      ]
+    },
     "GEMINI_API_KEY": {
       "required": false,
       "type": "string",
@@ -89,9 +106,34 @@
         "backend/evaluation/evaluation_manager.py"
       ]
     },
+    "LANGFUSE_RELEASE": {
+      "required": false,
+      "type": "string",
+      "sources": [
+        "backend/evaluation/evaluation_manager.py"
+      ]
+    },
+    "LANGFUSE_SAMPLE_RATE": {
+      "required": false,
+      "type": "float",
+      "default": "1.0",
+      "min": 0,
+      "max": 1,
+      "sources": [
+        "backend/evaluation/evaluation_manager.py"
+      ]
+    },
     "LANGFUSE_SECRET_KEY": {
       "required": false,
       "type": "string",
+      "sources": [
+        "backend/evaluation/evaluation_manager.py"
+      ]
+    },
+    "LANGFUSE_TRACING_ENABLED": {
+      "required": false,
+      "type": "string",
+      "default": "false",
       "sources": [
         "backend/evaluation/evaluation_manager.py"
       ]
@@ -103,6 +145,15 @@
         "backend/agents/zoe/utils/knowledge_index_builder.py"
       ],
       "min": 1
+    },
+    "OLLAMA_HOST": {
+      "required": false,
+      "type": "url",
+      "default": "http://localhost:11434",
+      "sources": [
+        "backend/evaluators/base.py",
+        "backend/evaluators/runner.py"
+      ]
     },
     "OPENAI_API_KEY": {
       "required": true,
