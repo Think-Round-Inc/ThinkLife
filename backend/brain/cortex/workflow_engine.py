@@ -27,6 +27,13 @@ Checkpointing: the graph is compiled with a checkpointer (SQLite by default,
 see workflow_checkpoint.py) and thread_id = execution_id, so an interrupted
 run can be resumed with resume_execution().
 
+Observability (Epic 4): every run reports per-stage latency and real token
+cost. Each node returns the seconds it took and the dollars it spent; reducers
+on WorkflowState add them up across retries and fallbacks, and finalize turns
+them into metadata.latency_ms / metadata.actual_cost_usd. Langfuse spans carry
+the model, token usage and prompt version (helpers in evaluation/ are no-ops
+when tracing is off).
+
 Compatibility: uses only LangGraph features present in both 0.6 (what
 Python 3.9 installs) and 1.x, so it runs on Python 3.9 through 3.13.
 
@@ -61,6 +68,13 @@ from .workflow_errors import (
     is_retryable,
 )
 from .workflow_profiles import resolve_workflow_profile
+from evaluation import (
+    CostEstimator,
+    score_current_trace,
+    start_span,
+    update_current_generation,
+    update_current_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +126,30 @@ _LOW_CONFIDENCE_MESSAGE = "I'm not confident I can provide an accurate answer to
 
 _RECENT_EXECUTIONS_LIMIT = 200
 
+# Stage names for the latency breakdown (Epic 4). Fallback models count as
+# llm_generation: it is still time spent waiting for an answer.
+STAGE_RETRIEVAL = "retrieval"
+STAGE_LLM_GENERATION = "llm_generation"
+STAGE_VALIDATION = "validation"
+
+
+def _extract_usage_details(metadata: Dict[str, Any]) -> Optional[Dict[str, int]]:
+    usage = (metadata or {}).get("usage") or {}
+    details = {
+        k: usage[k]
+        for k in ("prompt_tokens", "completion_tokens", "total_tokens")
+        if isinstance(usage.get(k), int)
+    }
+    return details or None
+
+
+def _add_stage_durations(current: Optional[Dict[str, float]], new: Optional[Dict[str, float]]) -> Dict[str, float]:
+    """Reducer: add each node's seconds to the running total for its stage."""
+    total = dict(current or {})
+    for stage, seconds in (new or {}).items():
+        total[stage] = total.get(stage, 0.0) + seconds
+    return total
+
 
 class WorkflowState(TypedDict, total=False):
     """
@@ -162,6 +200,13 @@ class WorkflowState(TypedDict, total=False):
     failures: Annotated[List[Dict[str, Any]], operator.add]
     escalation_reason: Optional[str]
     safety: Optional[Dict[str, Any]]
+
+    # Observability (Epic 4). Nodes return only their own share; the reducers
+    # sum across quality retries and fallbacks. latency_ms is the rounded
+    # breakdown written once at finalize.
+    stage_durations: Annotated[Dict[str, float], _add_stage_durations]
+    latency_ms: Dict[str, float]
+    total_cost_usd: Annotated[float, operator.add]
 
 
 @dataclass
@@ -321,6 +366,9 @@ class WorkflowEngine:
             "failures": [],
             "escalation_reason": None,
             "safety": None,
+            "stage_durations": {},
+            "latency_ms": {},
+            "total_cost_usd": 0.0,
         }
         self._tag_trace(execution_id, profile)
         final_state = await self._run(
@@ -484,6 +532,8 @@ class WorkflowEngine:
                 "agent_type": state.get("agent_type", profile.agent_type),
                 "execution_steps": state.get("execution_steps", []),
                 "errors": state.get("errors", []),
+                # Single-string form for callers that report one error (POST /api/brain)
+                "error": None if success else ((state.get("errors") or [None])[-1]),
                 "failures": state.get("failures", []),
                 "duration_seconds": (state.get("end_time") or time.time()) - start,
                 "confidence_score": state.get("confidence_score", 0.0),
@@ -493,7 +543,23 @@ class WorkflowEngine:
                 "escalation": {"reason": reason, "flagged_for_review": True} if reason else None,
                 "safety": state.get("safety"),
                 "resumable": status == WorkflowStatus.FAILED.value and self.checkpointer is not None,
+                # Epic 4: read by Zoe's trace metadata and Cortex analytics. A run
+                # that never reached finalize (hard timeout, graph error) still
+                # reports the stages it completed.
+                "latency_ms": state.get("latency_ms") or self._latency_breakdown(state),
+                "actual_cost_usd": state.get("total_cost_usd", 0.0) or None,
             },
+        }
+
+    def _latency_breakdown(self, state: Dict[str, Any], end_time: Optional[float] = None) -> Dict[str, float]:
+        durations = state.get("stage_durations") or {}
+        start = state.get("start_time") or time.time()
+        end = end_time or state.get("end_time") or time.time()
+        return {
+            "total": round((end - start) * 1000, 1),
+            "retrieval": round(durations.get(STAGE_RETRIEVAL, 0.0) * 1000, 1),
+            "llm_generation": round(durations.get(STAGE_LLM_GENERATION, 0.0) * 1000, 1),
+            "validation": round(durations.get(STAGE_VALIDATION, 0.0) * 1000, 1),
         }
 
     def _summary(self, state: Dict[str, Any], resumable: bool = False) -> Dict[str, Any]:
@@ -519,17 +585,11 @@ class WorkflowEngine:
             self._recent.popitem(last=False)
 
     def _tag_trace(self, execution_id: str, profile: WorkflowProfile):
-        """Put the workflow version and profile on the Langfuse span, when tracing is on."""
-        if not os.getenv("LANGFUSE_PUBLIC_KEY"):
-            return
-        try:
-            from langfuse import get_client
-            get_client().update_current_span(
-                version=WORKFLOW_VERSION,
-                metadata={"execution_id": execution_id, "workflow_profile": profile.to_dict()},
-            )
-        except Exception:
-            logger.debug("Langfuse span tagging skipped", exc_info=True)
+        """Put the workflow version and profile on the Langfuse span (no-op when tracing is off)."""
+        update_current_span(
+            version=WORKFLOW_VERSION,
+            metadata={"execution_id": execution_id, "workflow_profile": profile.to_dict()},
+        )
 
     # ------------------------------------------------------------------ #
     # Nodes
@@ -539,7 +599,7 @@ class WorkflowEngine:
     async def _initialize_node(self, state: WorkflowState) -> Dict[str, Any]:
         return {"execution_steps": [NODE_INITIALIZE]}
 
-    @observe(name="workflow_node_query_data_sources")
+    @observe(name="workflow_node_query_data_sources", as_type="retriever", capture_input=False, capture_output=False)
     async def _query_data_sources_node(self, state: WorkflowState, runtime: Runtime[WorkflowContext]) -> Dict[str, Any]:
         """
         Queries each enabled data source, retrying transient errors with the
@@ -547,9 +607,11 @@ class WorkflowEngine:
         and the run continues without its context.
         """
         request, specs, profile = runtime.context.request, runtime.context.specs, runtime.context.profile
+        stage_t0 = time.perf_counter()
         results: List[Dict[str, Any]] = []
         errors: List[str] = []
         failures: List[Dict[str, Any]] = []
+        query_texts: List[str] = []
 
         try:
             from ..data_sources import get_data_source_registry, create_vector_data_source, DataSourceConfig
@@ -557,7 +619,11 @@ class WorkflowEngine:
             registry = get_data_source_registry()
         except Exception as e:
             logger.exception("Data source setup failed")
-            return {"execution_steps": [NODE_QUERY_DATA_SOURCES], "errors": [f"DS Error: {e}"]}
+            return {
+                "execution_steps": [NODE_QUERY_DATA_SOURCES],
+                "errors": [f"DS Error: {e}"],
+                "stage_durations": {STAGE_RETRIEVAL: time.perf_counter() - stage_t0},
+            }
 
         for ds_spec in specs.data_sources:
             if not ds_spec.enabled:
@@ -570,15 +636,17 @@ class WorkflowEngine:
                 continue
 
             ds_config = ds_spec.config or {}
+            query_text = ds_spec.query or request.message
+            query_texts.append(query_text)
 
-            async def query_once(ds_spec=ds_spec, ds_config=ds_config, source_name=source_name):
+            async def query_once(ds_spec=ds_spec, ds_config=ds_config, source_name=source_name, query_text=query_text):
                 config = DataSourceConfig(source_id="vector_db", source_type=DataSourceType.VECTOR_DB, config=ds_config)
                 vector_source = create_vector_data_source(config)
                 if not await vector_source.initialize(ds_config):
                     return {"source": source_name, "error": "Initialization failed"}
                 try:
                     query_res = await vector_source.query(
-                        query=ds_spec.query or request.message,
+                        query=query_text,
                         context={"filter": ds_config.get("filter")},
                         k=ds_spec.limit or 5,
                     )
@@ -596,11 +664,17 @@ class WorkflowEngine:
                 failures.append({"node": NODE_QUERY_DATA_SOURCES, "kind": failure_kind(e), "detail": str(e)[:300]})
                 results.append({"source": source_name, "error": str(e)})
 
+        update_current_span(
+            input=query_texts[0] if len(query_texts) == 1 else query_texts,
+            output=results,
+            metadata={"data_source_count": len(specs.data_sources)},
+        )
         return {
             "execution_steps": [NODE_QUERY_DATA_SOURCES],
             "data_source_results": results,
             "errors": errors,
             "failures": failures,
+            "stage_durations": {STAGE_RETRIEVAL: time.perf_counter() - stage_t0},
         }
 
     @observe(name="workflow_node_execute_tools")
@@ -613,11 +687,15 @@ class WorkflowEngine:
             for tool in runtime.context.specs.tools:
                 if not tool.enabled:
                     continue
-                if registry.check_tool_available(tool.name):
-                    # Tool execution is still a placeholder in the Brain (unchanged by US 1.1)
-                    results.append({"tool": tool.name, "status": "executed", "result": "Tool execution placeholder"})
-                else:
-                    results.append({"tool": tool.name, "error": "Not available"})
+                with start_span(f"tool.{tool.name}", as_type="tool", input={"tool": tool.name}) as span:
+                    if registry.check_tool_available(tool.name):
+                        # Tool execution is still a placeholder in the Brain (unchanged by US 1.1)
+                        tool_result = {"tool": tool.name, "status": "executed", "result": "Tool execution placeholder"}
+                    else:
+                        tool_result = {"tool": tool.name, "error": "Not available"}
+                    if span is not None:
+                        span.update(output=tool_result)
+                    results.append(tool_result)
         except Exception as e:
             logger.exception("Tool execution node error")
             errors.append(str(e))
@@ -685,7 +763,10 @@ class WorkflowEngine:
 
         return {"execution_steps": [NODE_BUILD_MESSAGES], "messages": messages, "errors": errors}
 
-    @observe(name="workflow_node_call_provider", as_type="generation")
+    # capture_input/capture_output are off on the two generation nodes: the
+    # default would log the whole WorkflowState and runtime context, and would
+    # overwrite the precise input/output that _record_generation sets.
+    @observe(name="workflow_node_call_provider", as_type="generation", capture_input=False, capture_output=False)
     async def _call_provider_node(self, state: WorkflowState, runtime: Runtime[WorkflowContext]) -> Dict[str, Any]:
         """
         One LLM answer. Transient errors (timeout, 429, 5xx, dropped connection,
@@ -694,10 +775,11 @@ class WorkflowEngine:
         If it still fails, the route is set to a fallback model or escalation.
         """
         profile = runtime.context.profile
+        stage_t0 = time.perf_counter()
         spec = self._active_provider_spec(state, runtime.context)
         if spec is None:
-            return self._provider_failure(state, ProviderUnavailableError("No provider specified"))
-        label = f"{spec.provider_type}:{spec.model}"
+            return self._provider_failure(state, ProviderUnavailableError("No provider specified"), stage_t0)
+        label = f"{spec.provider_type}:{spec.model or 'default'}"
 
         async def one_attempt():
             try:
@@ -716,17 +798,20 @@ class WorkflowEngine:
                 one_attempt, attempts=profile.provider_retry_attempts, profile=profile, deadline=state.get("deadline")
             )
         except Exception as exc:  # retries spent, not retryable, or a bug in a provider
-            return self._provider_failure(state, exc)
+            return self._provider_failure(state, exc, stage_t0)
 
+        cost = self._record_generation(spec, state.get("messages") or [], response, runtime.context)
         return {
             "execution_steps": [NODE_CALL_PROVIDER],
             "llm_response": response,
             "final_content": response.get("content", ""),
             "provider_used": label,
             "provider_route": PROVIDER_ANSWERED,
+            "stage_durations": {STAGE_LLM_GENERATION: time.perf_counter() - stage_t0},
+            "total_cost_usd": cost or 0.0,
         }
 
-    def _provider_failure(self, state: WorkflowState, exc: BaseException) -> Dict[str, Any]:
+    def _provider_failure(self, state: WorkflowState, exc: BaseException, stage_t0: float) -> Dict[str, Any]:
         """call_provider failed for good: go to the next fallback model, or escalate."""
         kind = failure_kind(exc)
         logger.warning("call_provider failed (%s): %s", kind, exc)
@@ -734,6 +819,8 @@ class WorkflowEngine:
             "execution_steps": [f"{NODE_CALL_PROVIDER}_failed"],
             "failures": [{"node": NODE_CALL_PROVIDER, "kind": kind, "detail": str(exc)[:300]}],
             "errors": [f"Provider failure ({kind}): {exc}"],
+            # Time spent on failed attempts and backoff still counts as generation time
+            "stage_durations": {STAGE_LLM_GENERATION: time.perf_counter() - stage_t0},
         }
         next_fallback = (state.get("active_fallback") if state.get("active_fallback") is not None else -1) + 1
         if next_fallback < state.get("fallbacks_available", 0) and not _deadline_passed(state):
@@ -743,17 +830,18 @@ class WorkflowEngine:
             update["escalation_reason"] = ESCALATION_TIMEOUT if _deadline_passed(state) else ESCALATION_PROVIDER_FAILURE
         return update
 
-    @observe(name="workflow_node_fallback_provider", as_type="generation")
+    @observe(name="workflow_node_fallback_provider", as_type="generation", capture_input=False, capture_output=False)
     async def _fallback_provider_node(self, state: WorkflowState, runtime: Runtime[WorkflowContext]) -> Dict[str, Any]:
         """Try each remaining fallback provider once, in profile order."""
         profile = runtime.context.profile
+        stage_t0 = time.perf_counter()
         start = (state.get("active_fallback") if state.get("active_fallback") is not None else -1) + 1
         failures: List[Dict[str, Any]] = []
         errors: List[str] = []
 
         for index in range(start, len(profile.fallback_providers)):
             spec = profile.fallback_providers[index]
-            label = f"{spec.provider_type}:{spec.model}"
+            label = f"{spec.provider_type}:{spec.model or 'default'}"
             if _deadline_passed(state):
                 break
             try:
@@ -768,6 +856,7 @@ class WorkflowEngine:
                 errors.append(f"Fallback {label} failed: {e}")
                 continue
             logger.info("Fallback provider %s answered", label)
+            cost = self._record_generation(spec, state.get("messages") or [], response, runtime.context)
             return {
                 "execution_steps": [NODE_FALLBACK_PROVIDER],
                 "llm_response": response,
@@ -776,6 +865,8 @@ class WorkflowEngine:
                 "active_fallback": index,
                 "failures": failures,
                 "errors": errors,
+                "stage_durations": {STAGE_LLM_GENERATION: time.perf_counter() - stage_t0},
+                "total_cost_usd": cost or 0.0,
             }
 
         reason = ESCALATION_TIMEOUT if _deadline_passed(state) else ESCALATION_PROVIDER_FAILURE
@@ -785,6 +876,7 @@ class WorkflowEngine:
             "errors": errors,
             "active_fallback": len(profile.fallback_providers) - 1,
             "escalation_reason": reason,
+            "stage_durations": {STAGE_LLM_GENERATION: time.perf_counter() - stage_t0},
         }
 
     @observe(name="workflow_node_check_safety")
@@ -830,6 +922,7 @@ class WorkflowEngine:
     async def _validate_response_node(self, state: WorkflowState, runtime: Runtime[WorkflowContext]) -> Dict[str, Any]:
         """Score the answer; decide between accept, retry with feedback, or escalate."""
         profile = runtime.context.profile
+        stage_t0 = time.perf_counter()
         attempts = state.get("validation_attempts", 0) + 1
         update: Dict[str, Any] = {"execution_steps": [NODE_VALIDATE_RESPONSE], "validation_attempts": attempts}
 
@@ -840,6 +933,7 @@ class WorkflowEngine:
             logger.exception("Validation node error")
             result = {"is_valid": True, "confidence": profile.confidence_threshold, "mode": "validator_error"}
             update["errors"] = [f"Validation error: {e}"]
+        update["stage_durations"] = {STAGE_VALIDATION: time.perf_counter() - stage_t0}
 
         confidence = float(result.get("confidence", 0.0))
         update["confidence_score"] = confidence
@@ -862,11 +956,15 @@ class WorkflowEngine:
         logger.warning("Response validation failed (attempt %d, confidence %.2f)", attempts, confidence)
         return update
 
+    @observe(name="workflow_validate_response_quality", as_type="evaluator", capture_input=False)
     async def _validate_response_quality(self, response: str, user_message: str, state: WorkflowState,
                                          ctx: WorkflowContext) -> Dict[str, Any]:
         """
         Rule checks first, then (if the profile allows) an LLM judge.
         Returns {"is_valid", "confidence" 0-1, "feedback"?, "mode"}.
+
+        Traced as an "evaluator" span; the judge's own LLM call is a nested
+        "generation" span (judge_call) so its token usage is recorded too.
 
         Change from before US 1.1: when the judge is off or fails, an answer
         that passes the rule checks is accepted at the threshold. Previously a
@@ -874,6 +972,7 @@ class WorkflowEngine:
         every answer with the fallback message.
         """
         profile = ctx.profile
+        update_current_span(input={"user_message": user_message, "response": response})
         if len(response.strip()) < 10:
             return {"is_valid": False, "feedback": "Response is too short", "confidence": 0.1, "mode": "rules"}
         if response.count(" ") < 3:
@@ -909,11 +1008,20 @@ REASONING: <brief explanation>
 If score >= 75, the response is acceptable. Below 75, it needs improvement."""
 
         try:
-            judge = await asyncio.wait_for(
-                self._invoke_provider(spec, [{"role": "user", "content": validation_prompt}],
-                                      overrides={"max_tokens": 200, "temperature": 0.3}),
-                timeout=profile.provider_timeout_seconds,
-            )
+            with start_span("judge_call", as_type="generation"):
+                judge = await asyncio.wait_for(
+                    self._invoke_provider(spec, [{"role": "user", "content": validation_prompt}],
+                                          overrides={"max_tokens": 200, "temperature": 0.3}),
+                    timeout=profile.provider_timeout_seconds,
+                )
+                judge_metadata = judge.get("metadata") or {}
+                update_current_generation(
+                    model=judge_metadata.get("model") or spec.model,
+                    input=validation_prompt,
+                    output=judge.get("content", ""),
+                    usage_details=_extract_usage_details(judge_metadata),
+                    metadata={"provider": judge_metadata.get("provider", spec.provider_type), "purpose": "response_validation"},
+                )
         except Exception as e:
             logger.warning("LLM judge unavailable, using rule checks only: %s", e)
             return {**rules_pass, "mode": "judge_failed"}
@@ -958,11 +1066,21 @@ If score >= 75, the response is acceptable. Below 75, it needs improvement."""
             status = WorkflowStatus.COMPLETED_WITH_ERRORS.value
         else:
             status = WorkflowStatus.COMPLETED.value
+        end_time = time.time()
+        confidence = state.get("confidence_score", 0.0)
+        # Quality signal for the monitoring dashboard (Epic 4): the validator's
+        # confidence, stored per trace so it can be trended over time.
+        score_current_trace(name="response_confidence", value=confidence, data_type="NUMERIC")
         logger.info(
             "Workflow %s finished: %s (confidence %.2f, attempts %d)",
-            state.get("execution_id"), status, state.get("confidence_score", 0.0), state.get("validation_attempts", 0),
+            state.get("execution_id"), status, confidence, state.get("validation_attempts", 0),
         )
-        return {"execution_steps": [NODE_FINALIZE], "status": status, "end_time": time.time()}
+        return {
+            "execution_steps": [NODE_FINALIZE],
+            "status": status,
+            "end_time": end_time,
+            "latency_ms": self._latency_breakdown(state, end_time),
+        }
 
     # ------------------------------------------------------------------ #
     # Routing
@@ -1059,6 +1177,34 @@ If score >= 75, the response is acceptable. Below 75, it needs improvement."""
             # Free models occasionally return an empty completion; another try usually works.
             raise TransientProviderError(f"Empty response from {label}", provider=p_type, model=spec.model)
         return response
+
+    def _record_generation(self, spec: Any, messages: List[Dict[str, str]], response: Dict[str, Any],
+                           ctx: WorkflowContext) -> Optional[float]:
+        """
+        Epic 4: put the model, real token usage, cost and prompt version on the
+        current Langfuse generation span. Returns the cost in USD, or None when
+        the model is not in the local price table (cost unknown, not $0).
+        """
+        resp_metadata = response.get("metadata") or {}
+        model_name = resp_metadata.get("model") or getattr(spec, "model", None)
+        usage_details = _extract_usage_details(resp_metadata)
+        actual_cost_usd = CostEstimator.actual_cost(model_name, usage_details)
+        agent_meta = getattr(ctx.specs, "agent_metadata", None) or {}
+        update_current_generation(
+            model=model_name,
+            input=messages,
+            output=response.get("content", ""),
+            usage_details=usage_details,
+            cost_details={"total": actual_cost_usd} if actual_cost_usd is not None else None,
+            metadata={
+                "provider": resp_metadata.get("provider", getattr(spec, "provider_type", None)),
+                "finish_reason": resp_metadata.get("finish_reason"),
+                "temperature": getattr(spec, "temperature", None),
+                "max_tokens": getattr(spec, "max_tokens", None),
+                "prompt": (agent_meta.get("messages_context") or {}).get("system_prompt_version"),
+            },
+        )
+        return actual_cost_usd
 
     async def _retry_transient(self, fn, attempts: int, profile: WorkflowProfile,
                                deadline: Optional[float] = None):

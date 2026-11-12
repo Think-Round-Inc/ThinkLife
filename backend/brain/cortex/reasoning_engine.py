@@ -10,7 +10,7 @@ from ..specs import BrainRequest, ProviderSpec, ToolSpec, DataSourceSpec
 from ..providers import create_provider, get_provider_registry
 from ..tools import get_tool_registry
 from ..data_sources import get_data_source_registry
-from evaluation import CostEstimator, LatencyEstimator, get_latency_statistics
+from evaluation import CostEstimator, LatencyEstimator, get_latency_statistics, observe
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +214,7 @@ Based on the above, what should be the next action?
             logger.error(f"Provider creation failed: {e}")
             return None
     
+    @observe(name="reasoning_optimize_specs")
     async def optimize_execution_specs(
         self,
         original_specs: Any,

@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, List, Optional
 
+from brain.guardrails.fallback_handler import DEFAULT_FALLBACK
+from brain.guardrails.schema_validator import validate_response_schema
+
 logger = logging.getLogger(__name__)
 
 
@@ -209,6 +212,15 @@ class PolicyValidator:
         Wrapper matching CortexFlow's actual return shape:
         {"success": bool, "content": str, "metadata": dict, "processing_time": float}
         """
+        schema_errors = validate_response_schema(result)
+        if schema_errors:
+            logger.warning("Response failed schema validation: %s", schema_errors)
+            return {
+                "success": False,
+                "content": DEFAULT_FALLBACK,
+                "metadata": {"guardrails": {"schema_errors": schema_errors}},
+            }
+
         if not result.get("success", True):
             return result
 

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Dict, Optional
 import logging
 
 # Try to import AgentExecutionSpec, but handle circular imports if necessary
@@ -24,7 +24,38 @@ logger = logging.getLogger(__name__)
 
 class CostEstimator:
     """Estimates the financial cost of an execution"""
-    
+
+    # Approximate USD price per 1M tokens as (input, output). For the LOCAL
+    # /api/brain/analytics rollup only -- Langfuse Cloud's own model pricing
+    # (Settings -> Models) is the source of truth for the Langfuse dashboard
+    # and is computed server-side from usage_details independently of this
+    # table. Update these if provider list pricing changes.
+    _MODEL_PRICING_PER_1M_TOKENS = {
+        "gpt-4o-mini": (0.15, 0.60),
+        "gpt-4o": (2.50, 10.00),
+        "gemini-1.5-flash": (0.075, 0.30),
+        "gemini-2.0-flash": (0.10, 0.40),
+    }
+
+    @staticmethod
+    def actual_cost(model: Optional[str], usage: Optional[Dict[str, int]]) -> Optional[float]:
+        """Post-call actual cost computed from real token usage. Returns None
+        (not 0.0) when the model isn't in the local pricing table, so callers
+        can distinguish "$0 spent" from "cost unknown"."""
+        if not model or not usage:
+            return None
+
+        pricing = CostEstimator._MODEL_PRICING_PER_1M_TOKENS.get(model)
+        if not pricing:
+            return None
+
+        input_price, output_price = pricing
+        prompt_tokens = usage.get("prompt_tokens", 0) or 0
+        completion_tokens = usage.get("completion_tokens", 0) or 0
+
+        cost = (prompt_tokens / 1_000_000) * input_price + (completion_tokens / 1_000_000) * output_price
+        return round(cost, 6)
+
     @staticmethod
     @observe(name="estimate_cost")
     def estimate(specs: AgentExecutionSpec) -> float:

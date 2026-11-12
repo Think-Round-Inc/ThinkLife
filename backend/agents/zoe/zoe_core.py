@@ -15,6 +15,7 @@ from typing import Dict, Optional, Any, List
 
 from .personality import ZoePersonality
 from .conversation_manager import ZoeConversationManager
+from .prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -65,43 +66,51 @@ class ZoeCore:
         
         return context
     
+    # Hardcoded fallback, used only if the versioned prompt files under
+    # agents/zoe/prompts/ can't be read (e.g. packaging issue). Keeps Zoe
+    # answering something sensible rather than failing the request.
+    _FALLBACK_BASE_PROMPT = (
+        "You are Zoe, a compassionate AI companion for ThinkLife. Use warm, "
+        "supportive, trauma-informed language, validate feelings before "
+        "problem-solving, and never judge or minimize experiences."
+    )
+
     def build_system_prompt(self, context: Dict[str, Any]) -> str:
-        """
-        Build Zoe's trauma-informed system prompt based on context
-        
-        This is Zoe's "personality" that guides her responses
-        """
-        """Build Zoe's trauma-informed system prompt"""
-        base_prompt = """You are Zoe, a compassionate AI companion for ThinkLife.
+        """Build Zoe's trauma-informed system prompt based on context. This is
+        Zoe's "personality" that guides her responses. See
+        build_system_prompt_versioned() for the accompanying version metadata."""
+        text, _ = self.build_system_prompt_versioned(context)
+        return text
 
-                            Core Principles:
-                            - Trauma-Informed Care: Always prioritize safety and empowerment
-                            - Empathetic Communication: Validate feelings and provide support
-                            - Educational Support: Help users understand AI and technology
-                            - Healing-Focused: Support users on their healing journey
+    def build_system_prompt_versioned(self, context: Dict[str, Any]) -> "tuple[str, Dict[str, Any]]":
+        """Same as build_system_prompt(), plus the prompt version metadata
+        (name/version/hash) that produced it, for attaching to traces (Epic 4.1.4)."""
+        try:
+            base = get_prompt("zoe_system")
+        except FileNotFoundError:
+            logger.error("zoe_system prompt file missing, using inline fallback")
+            return self._FALLBACK_BASE_PROMPT, {
+                "name": "zoe_system", "version": 0, "sha256": None, "source": "inline_fallback"
+            }
 
-                            Guidelines:
-                            - Use warm, supportive language
-                            - Acknowledge emotions before problem-solving
-                            - Respect boundaries and pace
-                            - Provide resources when appropriate
-                            - Never judge or minimize experiences
-                            - Use phrases like "I hear you", "That makes sense", "Thank you for sharing"
+        compiled = base["text"]
+        addendum_version = None
 
-                            You speak with kindness, patience, and genuine care for each person's wellbeing."""
-        
-        # Add trauma-specific guidance for high-risk users
         if context.get("high_trauma_risk"):
-            base_prompt += """
+            try:
+                addendum = get_prompt("zoe_system_trauma_addendum")
+                compiled = f"{compiled}\n\n{addendum['text']}"
+                addendum_version = addendum["version"]
+            except FileNotFoundError:
+                logger.warning("zoe_system_trauma_addendum prompt file missing, skipping")
 
-                        IMPORTANT: This user has a high ACE score (trauma history). Please:
-                        - Be extra gentle and patient
-                        - Avoid triggering language
-                        - Offer support resources
-                        - Acknowledge their strength
-                        - Move at their pace"""
-        
-        return base_prompt
+        version_meta = {
+            "name": base["name"],
+            "version": base["version"],
+            "sha256": base["sha256"],
+            "addendum_version": addendum_version,
+        }
+        return compiled, version_meta
     
     def post_process_response(
         self,

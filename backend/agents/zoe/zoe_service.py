@@ -23,6 +23,8 @@ import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from evaluation import observe, safe_propagate_attributes, update_current_span, score_current_trace
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,6 +70,7 @@ class ZoeService:
             logger.error(f"Failed to initialize ZoeService: {e}")
             return False
     
+    @observe(name="zoe_chat", as_type="agent", capture_input=False, capture_output=False)
     async def process_message(
         self,
         message: str,
@@ -78,39 +81,61 @@ class ZoeService:
     ) -> Dict[str, Any]:
         """
         Process a user message through the plugin architecture
-        
+
         Args:
             message: User's message
             user_id: User identifier
             session_id: Session ID from brain's unified session management
             user_context: Optional user context (ace_score, etc.) - should include session_id
             application: Application type
-        
+
         Returns:
             Dictionary with response and metadata
         """
-        # NOTE: Tracing is handled by cortex.py - no decorator here to avoid duplicate traces
-        
+        # This is the root span of the trace (see @observe above). Every downstream
+        # call (cortex, workflow nodes, provider generations) nests under it.
+
         if not self.initialized:
             await self.initialize()
-        
-        try:
-            # Ensure user_context is a dict
-            if user_context is None:
-                user_context = {}
 
-            # Resolve session_id
-            if not session_id:
-                session_id = user_context.get("session_id")
-            
-            # Generate session_id if still missing (for conversation tracking)
-            if not session_id:
-                session_id = str(uuid.uuid4())
-                logger.info(f"Generated new conversation session_id: {session_id}")
-            
-            # Ensure session_id is in user_context for consistency
-            user_context["session_id"] = session_id
-            
+        # Ensure user_context is a dict
+        if user_context is None:
+            user_context = {}
+
+        # Resolve session_id
+        if not session_id:
+            session_id = user_context.get("session_id")
+
+        # Generate session_id if still missing (for conversation tracking)
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            logger.info(f"Generated new conversation session_id: {session_id}")
+
+        # Ensure session_id is in user_context for consistency
+        user_context["session_id"] = session_id
+
+        # capture_input is disabled on @observe above (its default would trace every
+        # kwarg, including the full user_context dict) -- set explicitly to just the
+        # user's message, which is what a reviewer actually needs at a glance.
+        update_current_span(input=message)
+
+        with safe_propagate_attributes(
+            user_id=str(user_id)[:200],
+            session_id=str(session_id)[:200],
+            tags=["agent:zoe", f"app:{application}"],
+            trace_name="zoe.chat",
+        ):
+            return await self._process_message_traced(message, user_id, session_id, user_context, application)
+
+    async def _process_message_traced(
+        self,
+        message: str,
+        user_id: str,
+        session_id: str,
+        user_context: Dict[str, Any],
+        application: str,
+    ) -> Dict[str, Any]:
+        try:
             # 1. Create BrainRequest using ZoeCore helper
             request_data = self.zoe_core.create_brain_request(
                 message=message,
@@ -138,7 +163,11 @@ class ZoeService:
                         "harmful": redirect_info.get("is_harmful", False)
                     }
                 )
-                
+
+                update_current_span(
+                    output=redirect_info["response"],
+                    metadata={"redirected": True, "low_confidence": False, "ace_score": user_context.get("ace_score")},
+                )
                 return {
                     "success": True,
                     "response": redirect_info["response"],
@@ -200,7 +229,18 @@ class ZoeService:
                         "original_response": agent_response.content
                     }
                 )
-                
+
+                update_current_span(
+                    output=zoe_fallback,
+                    metadata={
+                        "redirected": False,
+                        "low_confidence": True,
+                        "confidence_score": confidence,
+                        "ace_score": user_context.get("ace_score"),
+                        "latency_ms": agent_response.metadata.get("latency_ms"),
+                    },
+                )
+                score_current_trace(name="latency_seconds", value=agent_response.processing_time, data_type="NUMERIC")
                 return {
                     "success": True,
                     "response": zoe_fallback,
@@ -224,7 +264,18 @@ class ZoeService:
                     content=agent_response.content,
                     metadata={"confidence": confidence}
                 )
-                
+
+                update_current_span(
+                    output=agent_response.content,
+                    metadata={
+                        "redirected": False,
+                        "low_confidence": False,
+                        "confidence_score": confidence,
+                        "ace_score": user_context.get("ace_score"),
+                        "latency_ms": agent_response.metadata.get("latency_ms"),
+                    },
+                )
+                score_current_trace(name="latency_seconds", value=agent_response.processing_time, data_type="NUMERIC")
                 return {
                     "success": True,
                     "response": agent_response.content,
@@ -240,7 +291,7 @@ class ZoeService:
             else:
                 # LLM processing failed, use fallback
                 fallback_response = self.zoe_core.get_fallback_response()
-                
+
                 # Add fallback to conversation
                 self.zoe_core.conversation_manager.add_message(
                     session_id=request_data["session_id"],
@@ -248,7 +299,13 @@ class ZoeService:
                     content=fallback_response,
                     metadata={"fallback": True, "error": agent_response.metadata.get("error")}
                 )
-                
+
+                update_current_span(
+                    output=fallback_response,
+                    level="WARNING",
+                    status_message=agent_response.metadata.get("error", "Processing failed"),
+                    metadata={"redirected": False, "low_confidence": False, "llm_failure": True},
+                )
                 return {
                     "success": False,
                     "response": fallback_response,
@@ -257,12 +314,18 @@ class ZoeService:
                     "metadata": {"agent": "zoe", "fallback": True},
                     "timestamp": datetime.now().isoformat()
                 }
-        
+
         except Exception as e:
             logger.exception("Error in ZoeService.process_message")
-            
+
             error_response = self.zoe_core.get_error_response() if self.zoe_core else "I'm experiencing technical difficulties."
-            
+
+            update_current_span(
+                output=error_response,
+                level="ERROR",
+                status_message=str(e),
+                metadata={"error": True},
+            )
             return {
                 "success": False,
                 "response": error_response,

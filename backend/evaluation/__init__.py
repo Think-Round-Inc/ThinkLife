@@ -15,7 +15,14 @@ from .evaluation_manager import (
     get_langfuse_client,
     flush_langfuse,
     reset_langfuse_client,
-    LANGFUSE_AVAILABLE
+    LANGFUSE_AVAILABLE,
+    observe,
+    propagate_attributes,
+    safe_propagate_attributes,
+    start_span,
+    update_current_span,
+    update_current_generation,
+    score_current_trace,
 )
 
 from .estimators import (
@@ -39,5 +46,12 @@ __all__ = [
     "get_langfuse_client",
     "flush_langfuse",
     "reset_langfuse_client",
-    "LANGFUSE_AVAILABLE"
+    "LANGFUSE_AVAILABLE",
+    "observe",
+    "propagate_attributes",
+    "safe_propagate_attributes",
+    "start_span",
+    "update_current_span",
+    "update_current_generation",
+    "score_current_trace",
 ]
