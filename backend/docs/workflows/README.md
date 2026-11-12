@@ -17,7 +17,7 @@ python scripts/export_workflow_diagrams.py
 
 ## Requirements
 
-Runs on Python 3.9 through 3.13. On Python 3.9, pip installs LangGraph 0.6; on 3.10 and later, LangGraph 1.x. The workflow only uses features both versions have, and the tests pass on both (`requirements.txt` pins `aiosqlite<0.22` on 3.9, which the 3.9 SQLite checkpoint store needs).
+Python 3.10 through 3.13 (tests pass on each). The workflow code itself only uses LangGraph features present in both 0.6 and 1.x, but the `langfuse>=3.11` pin that Epic 4 added to `requirements.txt` needs Python 3.10 or later, so a Python 3.9 virtualenv can no longer install the backend.
 
 ## Nodes
 
