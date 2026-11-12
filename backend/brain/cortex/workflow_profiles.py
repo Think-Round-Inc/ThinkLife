@@ -69,13 +69,24 @@ def parse_provider_list(raw: Optional[str], template: Optional[Any] = None) -> L
     return specs
 
 
+def _openrouter_registered() -> bool:
+    """True once the OpenRouter provider (US 5.x) is part of this codebase."""
+    try:
+        from ..providers.provider_registry import PROVIDER_CONFIGS
+        return "openrouter" in PROVIDER_CONFIGS
+    except Exception:
+        return False
+
+
 def _default_fallbacks(primary: Optional[Any]) -> List[ProviderSpec]:
     """
     With no fallback configured: if an OpenRouter key is present and the
     primary is not already the free router, fall back to openrouter/free.
     Costs nothing and covers the "OpenAI key missing or rate-limited" case.
+    Only applies when the OpenRouter provider exists, so a key in .env cannot
+    add a fallback this build is unable to call.
     """
-    if not os.getenv("OPENROUTER_API_KEY") or primary is None:
+    if not os.getenv("OPENROUTER_API_KEY") or primary is None or not _openrouter_registered():
         return []
     if getattr(primary, "provider_type", None) == "openrouter" and getattr(primary, "model", None) == "openrouter/free":
         return []

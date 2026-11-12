@@ -62,10 +62,10 @@ Profiles resolve in this order, later wins: built-in profile (`brain/cortex/work
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `WORKFLOW_FALLBACK_PROVIDERS` | unset | Fallback models for every agent, e.g. `openrouter:openrouter/free,openai:gpt-4o-mini` |
+| `WORKFLOW_FALLBACK_PROVIDERS` | unset | Fallback models for every agent, as `provider:model` pairs, e.g. `gemini:gemini-1.5-flash,openai:gpt-4o` |
 | `<AGENT>_FALLBACK_PROVIDERS` | unset | Same, for one agent, e.g. `ZOE_FALLBACK_PROVIDERS` |
-| `OPENROUTER_API_KEY` | unset | When set and no fallback is configured, `openrouter:openrouter/free` becomes the fallback |
-| `WORKFLOW_LLM_VALIDATION` | `true` | `false` turns off the LLM judge: one LLM call per message instead of two (useful on the free tier) |
+| `OPENROUTER_API_KEY` | unset | When set and no fallback is configured, `openrouter:openrouter/free` becomes the fallback. Only applies once the OpenRouter provider (US 5.x) is in the codebase; until then the key is ignored here |
+| `WORKFLOW_LLM_VALIDATION` | `true` | `false` turns off the LLM judge: one LLM call per message instead of two |
 | `WORKFLOW_CHECKPOINTER` | `sqlite` | `sqlite`, `memory`, or `none` |
 | `WORKFLOW_CHECKPOINT_PATH` | `backend/data/workflow_checkpoints.sqlite3` | SQLite checkpoint file (git-ignored) |
 | `WORKFLOW_KEEP_COMPLETED_CHECKPOINTS` | `false` | Keep checkpoints of finished runs for debugging |
@@ -96,6 +96,20 @@ Every workflow response's `metadata` now includes:
 | `validation_mode` | `llm_judge`, `rules`, `judge_failed` or `judge_unparsed` |
 | `safety` | Policy check result |
 | `resumable` | Whether the run can be resumed from its checkpoint |
+| `error` | The last error as one string when the run did not succeed, else `null` (read by `POST /api/brain`) |
+| `latency_ms` | `{total, retrieval, llm_generation, validation}` in milliseconds (Epic 4) |
+| `actual_cost_usd` | Real token cost of the answer calls, or `null` when the model has no known price (Epic 4) |
+
+## Observability (Epic 4)
+
+The workflow keeps the Epic 4 tracing and metrics, adapted to the parallel graph:
+
+- Each node returns the seconds it took for its stage and, for LLM calls, the dollars it spent. Reducers on `WorkflowState` add these up, so quality retries and fallback models are all counted. `finalize` writes the rounded `latency_ms` breakdown.
+- Time spent on failed attempts and backoff counts as `llm_generation`. A run that never reaches `finalize` (hard timeout, graph error) still reports the stages it completed.
+- Cost uses `CostEstimator.actual_cost` on the token usage each provider returns. The judge call's usage is recorded on its own Langfuse span but is not part of `actual_cost_usd`, as before.
+- Langfuse spans: `query_data_sources` is a `retriever` span, each tool gets a `tool.<name>` span, `call_provider` and `fallback_provider` are `generation` spans with model, usage, cost and prompt version, the validator is an `evaluator` span with a nested `judge_call` generation, and `finalize` scores `response_confidence`. All helpers come from `evaluation/` and do nothing when tracing is off.
+
+Tests: `tests/test_workflow_observability.py`.
 
 ## Changing the workflow
 

@@ -167,6 +167,9 @@ def test_agent_specific_fallback_env_wins(workflow_env, monkeypatch):
 
 
 def test_openrouter_key_adds_free_fallback_by_default(workflow_env, monkeypatch):
+    import brain.providers.provider_registry as registry
+    monkeypatch.setitem(registry.PROVIDER_CONFIGS, "openrouter",
+                        {"models": ["openrouter/free"], "default_model": "openrouter/free"})
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     profile = resolve_workflow_profile(make_specs(provider="openai", model="gpt-4o-mini"))
     assert [(p.provider_type, p.model) for p in profile.fallback_providers] == [("openrouter", "openrouter/free")]
@@ -174,6 +177,15 @@ def test_openrouter_key_adds_free_fallback_by_default(workflow_env, monkeypatch)
     # ...but never a fallback to the provider that is already failing
     same = resolve_workflow_profile(make_specs(provider="openrouter", model="openrouter/free"))
     assert same.fallback_providers == []
+
+
+def test_openrouter_key_is_ignored_until_the_provider_exists(workflow_env, monkeypatch):
+    """A key in .env must not add a fallback this build cannot call."""
+    import brain.providers.provider_registry as registry
+    monkeypatch.delitem(registry.PROVIDER_CONFIGS, "openrouter", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    profile = resolve_workflow_profile(make_specs(provider="openai", model="gpt-4o-mini"))
+    assert profile.fallback_providers == []
 
 
 def test_malformed_fallback_entries_are_ignored(workflow_env):
