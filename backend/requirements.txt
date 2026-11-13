@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 pydantic
+pandas
 python-dotenv
 openai
 langchain
@@ -20,3 +21,6 @@ requests
 # Fixes for Python 3.9 and LibreSSL environments
 urllib3<2.0.0
 importlib-metadata>=6.0.0
+sentence-transformers
+langchain-huggingface
+cachetools

@@ -1,0 +1,522 @@
+[
+  {
+    "query_id": "K001",
+    "query": "What is Think Round, Inc.?",
+    "expected_parent_keys": [
+      "knowledge:0"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K002",
+    "query": "What is Think Round's guiding motto?",
+    "expected_parent_keys": [
+      "knowledge:1"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K003",
+    "query": "Where is Think Round located?",
+    "expected_parent_keys": [
+      "knowledge:2"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K004",
+    "query": "How can I contact Think Round?",
+    "expected_parent_keys": [
+      "knowledge:3"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K005",
+    "query": "What is Think Round's website?",
+    "expected_parent_keys": [
+      "knowledge:4"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K006",
+    "query": "When was Think Round founded and by whom?",
+    "expected_parent_keys": [
+      "knowledge:5"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K007",
+    "query": "What is Think Round's mission statement?",
+    "expected_parent_keys": [
+      "knowledge:6"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K008",
+    "query": "What communities does Think Round serve?",
+    "expected_parent_keys": [
+      "knowledge:7"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K009",
+    "query": "What are Think Round's goals through 2029?",
+    "expected_parent_keys": [
+      "knowledge:8"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K010",
+    "query": "Does Think Round have a non-discrimination policy?",
+    "expected_parent_keys": [
+      "knowledge:9"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K011",
+    "query": "What awards has Think Round received?",
+    "expected_parent_keys": [
+      "knowledge:10"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K012",
+    "query": "Who is Heidi Hardin?",
+    "expected_parent_keys": [
+      "knowledge:11"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K013",
+    "query": "Who is on the Think Round board of directors?",
+    "expected_parent_keys": [
+      "knowledge:12"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K014",
+    "query": "Who are the exhibiting artists at Think Round Fine Arts?",
+    "expected_parent_keys": [
+      "knowledge:13"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K015",
+    "query": "Has Think Round been recognized by the media or press?",
+    "expected_parent_keys": [
+      "knowledge:14"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K016",
+    "query": "What is the Children's Mural Program (CMP)?",
+    "expected_parent_keys": [
+      "knowledge:15"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K017",
+    "query": "What grades does the Children's Mural Program serve?",
+    "expected_parent_keys": [
+      "knowledge:16"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K018",
+    "query": "What do children create in the Children's Mural Program?",
+    "expected_parent_keys": [
+      "knowledge:17"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K019",
+    "query": "What is the KEEP! program?",
+    "expected_parent_keys": [
+      "knowledge:18"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K020",
+    "query": "Is Think Round looking for KEEP! volunteers?",
+    "expected_parent_keys": [
+      "knowledge:19"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "E001",
+    "query": "I'm really nervous about my interview tomorrow. What if I make mistakes while answering the questions?",
+    "expected_parent_keys": [
+      "empathy:0"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E002",
+    "query": "I recently moved to a new city, but I haven't made any friends so far. Lately, I've been feeling quite lonely.",
+    "expected_parent_keys": [
+      "empathy:1"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E003",
+    "query": "I put in a lot of effort studying for my exam, but my score ended up being much lower than I hoped",
+    "expected_parent_keys": [
+      "empathy:2"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E004",
+    "query": "I messed up during my presentation, and it seemed like everyone saw it. Now I just feel really embarrassed.",
+    "expected_parent_keys": [
+      "empathy:3"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E005",
+    "query": "My friend canceled our plans right before we were supposed to meet. I had been looking forward to it, so I feel pretty disappointed.",
+    "expected_parent_keys": [
+      "empathy:4"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E006",
+    "query": "I just finished the project I’ve been working on for months, and I feel really proud of myself.",
+    "expected_parent_keys": [
+      "empathy:5"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E007",
+    "query": "Next week, I need to speak in front of a big group, and honestly, public speaking makes me pretty nervous.",
+    "expected_parent_keys": [
+      "empathy:6"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E008",
+    "query": "It's been a long time since I've seen my family, and I really miss spending time with them.",
+    "expected_parent_keys": [
+      "empathy:7"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E009",
+    "query": "Today, someone gave me some great feedback on my work, and it really made my day.",
+    "expected_parent_keys": [
+      "empathy:8"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E010",
+    "query": "Today I gave something new a try. I wasn't sure I could pull it off, but it actually went really well.",
+    "expected_parent_keys": [
+      "empathy:9"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "K021",
+    "query": "Can you explain what kind of nonprofit Think Round is and whom it helps?",
+    "expected_parent_keys": [
+      "knowledge:0"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K022",
+    "query": "Which short phrase captures Think Round’s belief about humanity and the planet?",
+    "expected_parent_keys": [
+      "knowledge:1"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K023",
+    "query": "What is the street address of the Think Round office in San Francisco?",
+    "expected_parent_keys": [
+      "knowledge:2"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K024",
+    "query": "What are the ways I can get in touch with the Think Round team?",
+    "expected_parent_keys": [
+      "knowledge:3"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K025",
+    "query": "Who started Think Round, and in what month and year did it begin?",
+    "expected_parent_keys": [
+      "knowledge:5"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K026",
+    "query": "How does Think Round describe its purpose in connecting science, art, and families?",
+    "expected_parent_keys": [
+      "knowledge:6"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K027",
+    "query": "Which San Francisco neighborhoods are the focus of Think Round’s outreach?",
+    "expected_parent_keys": [
+      "knowledge:7"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K028",
+    "query": "What major initiatives does Think Round hope to finish by 2029?",
+    "expected_parent_keys": [
+      "knowledge:8"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K029",
+    "query": "Does Think Round promise equal treatment in volunteering, hiring, and services?",
+    "expected_parent_keys": [
+      "knowledge:9"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K030",
+    "query": "Has the organization or its founder received any environmental or community awards?",
+    "expected_parent_keys": [
+      "knowledge:10"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K031",
+    "query": "What roles does Heidi Hardin have at Think Round, and what is her background?",
+    "expected_parent_keys": [
+      "knowledge:11"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K032",
+    "query": "Who holds leadership and other seats on the Think Round board?",
+    "expected_parent_keys": [
+      "knowledge:12"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K033",
+    "query": "How does Think Round teach environmental science to elementary students through art?",
+    "expected_parent_keys": [
+      "knowledge:15"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K034",
+    "query": "What kinds of murals or artwork do CMP participants make and display?",
+    "expected_parent_keys": [
+      "knowledge:17"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "K035",
+    "query": "In KEEP!, what outdoor science activities do children take part in?",
+    "expected_parent_keys": [
+      "knowledge:18"
+    ],
+    "expected_source_type": "knowledge"
+  },
+  {
+    "query_id": "C001",
+    "query": "How might prolonged stress affect a child’s attention, memory, and ability to learn?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "C002",
+    "query": "Why can feeling safe and having dependable adults help children who have experienced trauma?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "C003",
+    "query": "What creative activities can help children communicate experiences they struggle to put into words?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "C004",
+    "query": "How can shared art-making encourage connections across generations in a family?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "C005",
+    "query": "What role do community art projects play in communication across cultures and backgrounds?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "C006",
+    "query": "Which changes in sleep, energy, concentration, or appetite may accompany ongoing stress?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "C007",
+    "query": "What are some everyday coping practices involving breathing, movement, routines, or time outdoors?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "C008",
+    "query": "Why might taking breaks from distressing news or social media help someone manage stress?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "C009",
+    "query": "When should ongoing emotional difficulties prompt someone to consider professional support?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "C010",
+    "query": "How does Zoe’s mental-health information differ from assessment or treatment by a qualified professional?",
+    "expected_parent_keys": [
+      "context"
+    ],
+    "expected_source_type": "context"
+  },
+  {
+    "query_id": "E011",
+    "query": "I keep checking for a decision and the uncertainty is making me anxious. How do I cope?",
+    "expected_parent_keys": [
+      "empathy:10"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E012",
+    "query": "My friends seem to leave me out lately, and it really hurts.",
+    "expected_parent_keys": [
+      "empathy:11"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E013",
+    "query": "I said something embarrassing during a conversation and keep replaying it in my head.",
+    "expected_parent_keys": [
+      "empathy:12"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E014",
+    "query": "I worked hard on an application but was rejected, and I feel crushed.",
+    "expected_parent_keys": [
+      "empathy:13"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E015",
+    "query": "Someone surprised me with a thoughtful present, and I feel so thankful.",
+    "expected_parent_keys": [
+      "empathy:14"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E016",
+    "query": "I helped a person solve a difficult issue and their thanks made me happy.",
+    "expected_parent_keys": [
+      "empathy:15"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E017",
+    "query": "I’m starting a new position soon and feel uneasy about what to expect.",
+    "expected_parent_keys": [
+      "empathy:16"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E018",
+    "query": "I had a fight with someone close to me and now I feel sad about it.",
+    "expected_parent_keys": [
+      "empathy:17"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E019",
+    "query": "I finally did something I used to be scared of, and I feel proud.",
+    "expected_parent_keys": [
+      "empathy:18"
+    ],
+    "expected_source_type": "empathy"
+  },
+  {
+    "query_id": "E020",
+    "query": "Everything changed unexpectedly and I’m frustrated because my plan fell apart.",
+    "expected_parent_keys": [
+      "empathy:19"
+    ],
+    "expected_source_type": "empathy"
+  }
+]

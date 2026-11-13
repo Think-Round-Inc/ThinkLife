@@ -1,0 +1,46 @@
+services:
+
+  chroma-primary:
+    image: chromadb/chroma:latest
+    container_name: zoe-chroma-primary
+    ports:
+      - "8020:8000"
+    volumes:
+      - ./replication_data/primary:/data
+    restart: unless-stopped
+
+  chroma-secondary:
+    image: chromadb/chroma:latest
+    container_name: zoe-chroma-secondary
+    ports:
+      - "8021:8000"
+    volumes:
+      - ./replication_data/secondary:/data
+    restart: unless-stopped
+
+  chroma-read-1:
+    image: chromadb/chroma:latest
+    container_name: zoe-chroma-read-1
+    ports:
+      - "8022:8000"
+    volumes:
+      - ./replication_data/read1:/data
+    restart: unless-stopped
+
+  chroma-read-2:
+    image: chromadb/chroma:latest
+    container_name: zoe-chroma-read-2
+    ports:
+      - "8023:8000"
+    volumes:
+      - ./replication_data/read2:/data
+    restart: unless-stopped
+
+  chroma-snapshot:
+    image: chromadb/chroma:latest
+    container_name: zoe-chroma-snapshot
+    ports:
+      - "8024:8000"
+    volumes:
+      - ./replication_data/snapshot_restore:/data
+    restart: unless-stopped
