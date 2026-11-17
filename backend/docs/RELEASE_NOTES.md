@@ -5,16 +5,18 @@
 - `PolicyValidator.validate_result` now schema-checks first. A malformed result is replaced with the default fallback message and `metadata.guardrails.schema_errors` lists the problems.
 - `tests/regression_set.json`: 9 fixed input/expected-outcome cases for the policy validator.
 - `tests/test_release_6_1.py`: unit + functional tests for the above.
+- `tests/test_chatbot_misuse.py`: high-level tests that send misuse messages through `/api/chat` and check what the user gets back.
 
 ## Testing metrics
 Run: `cd backend && python -m pytest tests -v`
 
 | Metric | Value |
 |---|---|
-| Total tests | 40 |
-| Passed / failed | 40 / 0 |
+| Total tests | 55 |
+| Passed / failed | 55 / 0 |
 | New unit tests (schema validator) | 6 |
 | New functional tests (validate_result, regression set, offline eval responses) | 20 |
+| New high-level misuse tests | 15 |
 | Existing guardrail tests | 14 |
 | Regression cases | 9 policy cases + 10 pre-baked bot responses from `evaluators/test_cases.json` |
 
@@ -22,8 +24,8 @@ Run: `cd backend && python -m pytest tests -v`
 
 | Metric | Previous | This release | Change |
 |---|---|---|---|
-| Tests | 14 | 40 | +26 |
-| Pass rate | 14/14 | 40/40 | no regressions |
+| Tests | 14 | 55 | +41 |
+| Pass rate | 14/14 | 55/55 | no regressions |
 | Output schema validation | none | yes | new |
 | Regression set | none | yes (19 cases) | new |
 
