@@ -1,0 +1,144 @@
+# ==================================================
+# ThinkLife Content Policy - Blocked Terms/Phrases
+# ==================================================
+# One term or phrase per line.
+# Avoid broad words that may occur in legitimate
+# support, educational, or cybersecurity discussions.
+
+
+# --------------------------------------------------
+# Explicit sexual solicitation
+# --------------------------------------------------
+
+send nudes
+send nude pictures
+send explicit photos
+send sexual pictures
+request nude photos
+share nude pictures
+sexual services
+buy sexual services
+sell sexual services
+explicit sexual content
+
+
+# --------------------------------------------------
+# Credential theft / account compromise
+# --------------------------------------------------
+
+steal passwords
+steal login credentials
+steal credentials
+credential theft
+steal authentication tokens
+steal access tokens
+steal api keys
+buy stolen credentials
+sell stolen credentials
+buy stolen passwords
+sell stolen passwords
+buy stolen accounts
+sell stolen accounts
+buy hacked accounts
+sell hacked accounts
+
+
+# --------------------------------------------------
+# Malicious hacking services
+# --------------------------------------------------
+
+hire a hacker
+pay a hacker
+hacker for hire
+hack someone's account
+hack another person's account
+break into someone's account
+steal someone's account
+bypass someone's password
+steal session cookies
+steal authentication cookies
+
+
+# --------------------------------------------------
+# Malware / malicious software requests
+# --------------------------------------------------
+
+create ransomware
+deploy ransomware
+spread ransomware
+create credential stealing malware
+create password stealing malware
+install malware on someone's computer
+infect someone's computer with malware
+distribute malware
+deploy malware
+create malicious software to steal passwords
+
+
+# --------------------------------------------------
+# Phishing / impersonation for credential theft
+# --------------------------------------------------
+
+create a phishing page
+create a fake login page
+steal passwords with phishing
+steal credentials with phishing
+send phishing emails
+create a credential harvesting page
+create a password harvesting page
+impersonate someone to steal credentials
+
+
+# --------------------------------------------------
+# Stolen financial information
+# --------------------------------------------------
+
+buy stolen credit cards
+sell stolen credit cards
+buy stolen bank accounts
+sell stolen bank accounts
+buy stolen banking credentials
+sell stolen banking credentials
+buy stolen financial information
+sell stolen financial information
+
+
+# --------------------------------------------------
+# Illegal drug sales / solicitation
+# --------------------------------------------------
+
+buy illegal drugs
+sell illegal drugs
+sell drugs
+drug dealer contact
+find a drug dealer
+contact a drug dealer
+buy illegal narcotics
+sell illegal narcotics
+
+
+# --------------------------------------------------
+# Identity theft / stolen identity information
+# --------------------------------------------------
+
+buy stolen identities
+sell stolen identities
+buy stolen identity documents
+sell stolen identity documents
+buy stolen social security numbers
+sell stolen social security numbers
+steal someone's identity
+commit identity theft
+
+
+# --------------------------------------------------
+# Fraud solicitation
+# --------------------------------------------------
+
+help me commit fraud
+help me scam someone
+create a fake payment receipt
+create fake banking records
+create fraudulent documents
+steal money from someone's account
+use stolen credit card information

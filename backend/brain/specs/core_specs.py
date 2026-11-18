@@ -96,6 +96,8 @@ class UserContext:
     user_id: str
     session_id: str
     is_authenticated: bool
+    roles: List[str] = field(default_factory=list) # small line (code added)
+    token: Optional[str] = None  # RBAC Code added single line of code added here
     user_profile: Optional[UserProfile] = None
     permissions: List[str] = field(default_factory=list)
     preferences: UserPreferences = field(default_factory=UserPreferences)

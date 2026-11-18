@@ -184,7 +184,36 @@ class CortexFlow:
             
             if not self.security_manager.check_rate_limit(request.user_context.user_id, ctx_dict):
                 return self._create_error_response("Rate limit exceeded", start_time)
+
+            # Sanitize the incoming user message
+            original_message = request.message
+            sanitized_message = self.security_manager.sanitize_input(request.message)
             
+
+            if not sanitized_message:
+                return self._create_error_response(
+                    "Message is empty after sanitization",
+                    start_time
+                )
+            request.message = sanitized_message
+
+            # Redact sensitive information from the user message.
+            redaction_result = self.security_manager.redact_sensitive_data(
+                request.message
+            )
+
+            request.message = redaction_result["content"]
+            
+
+            # Check the sanitized message against content safety rules.
+            content_check = self.security_manager.filter_content(request.message)
+            if not content_check["safe"]:
+                return self._create_error_response(
+                    "Message blocked by content filter",
+                     start_time
+                )
+            request.message = content_check["content"]
+
             # 3. Planning
             strategy = agent_specs.processing.execution_strategy if agent_specs.processing else "direct"
             
@@ -216,8 +245,53 @@ class CortexFlow:
                 )
                 result = await self.execute_agent_request(plan, request)
             
+            
+        
+            # Apply security checks to the generated response.
+            response_content = result.get("content", "")
+
+            if response_content:
+                sanitized_response = self.security_manager.sanitize_input(
+                    response_content
+                )
+                # Redact sensitive information from the generated response.
+                output_redaction = (
+                    self.security_manager.redact_sensitive_data(
+                        sanitized_response
+                    )
+                )
+
+                redacted_response = output_redaction["content"]
+                output_check = self.security_manager.filter_content(
+                    redacted_response 
+                )
+
+                if not output_check["safe"]:
+                    result["content"] = (
+                        "I'm unable to provide that response safely. "
+                        "Please rephrase your request."
+                    )
+
+                    result.setdefault("metadata", {})
+                    result["metadata"]["output_moderation"] = "blocked"
+
+                else:
+                    result["content"] = output_check["content"]
+
+                # Record output redaction details for security auditing.
+                if output_redaction["redacted"]:
+                    result.setdefault("metadata", {})
+                    result["metadata"]["output_redaction"] = {
+                        "redacted": True,
+                        "types": output_redaction["redaction_types"],
+                        "count": output_redaction["redaction_count"],
+                    }
+                   
+
             result["processing_time"] = time.time() - start_time
             return result
+             
+
             
         except Exception as e:
             logger.exception("Error processing agent request")

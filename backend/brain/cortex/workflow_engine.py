@@ -8,6 +8,7 @@ import logging
 import time
 import uuid
 import os
+from ..guardrails.rbac import get_rbac_manager  
 from typing import Dict, Any, List, Optional, TypedDict
 from functools import reduce
 
@@ -63,6 +64,8 @@ class WorkflowEngine:
         self.executions: Dict[str, Dict[str, Any]] = {}
         self._initialized = False
         self.graph = None
+        # Initialize the RBAC manager for tool authorization checks.
+        self.rbac_manager = get_rbac_manager() 
     
     async def initialize(self):
         self._initialized = True
@@ -338,6 +341,47 @@ class WorkflowEngine:
             
             for tool in state["specs"].tools:
                 if not tool.enabled: continue
+                # Enforce role-based authorization before processing each tool.
+                request = state["request"]
+     
+                user_roles = getattr(
+                    request.user_context,
+                    "roles",
+                    []
+                )
+
+                authorization = self.rbac_manager.is_tool_allowed(
+                    user_roles,
+                    tool.name
+                )
+                # Log each tool authorization decision for security auditing.
+                self.rbac_manager.log_authorization_event(
+                    user_id=getattr(
+                        request.user_context,
+                        "user_id",
+                        "unknown"
+                    ),
+                    roles=user_roles,
+                    tool_name=tool.name,
+                    allowed=authorization["allowed"],
+                    reason=authorization["reason"],
+                )
+                # Deny unauthorized tool access before execution
+                if not authorization["allowed"]:
+                    logger.warning(
+                        "RBAC denied tool '%s' for user '%s' with roles %s",
+                        tool.name,
+                        getattr(request.user_context, "user_id", "unknown"),
+                        user_roles,
+                    )
+
+                    results.append({
+                        "tool": tool.name,
+                        "status": "denied",
+                        "error": "Access denied by RBAC",
+                    })
+
+                    continue
                 
                 if registry.check_tool_available(tool.name):
                     # In a real implementation, we'd execute the tool here
@@ -392,10 +436,12 @@ class WorkflowEngine:
                 # Context injection
                 self._inject_context_messages(messages, state)
                 
-                # Current message
+                
+                
+                # Use the request message prepared by Cortex for the current user turn.
                 messages.append({
                     "role": "user", 
-                    "content": msg_context.get("current_message") or request.message
+                    "content": request.message 
                 })
             else:
                 # Generic build

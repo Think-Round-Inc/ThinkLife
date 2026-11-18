@@ -109,14 +109,21 @@ class SessionManager:
             
             key = self._get_public_key()
             if not key:
-                logger.warning("Verifying without signature (key missing)")
-                decoded = jwt.decode(token, options={"verify_signature": False, "verify_exp": True})
+                logger.error(
+                    "Keycloak public key unavailable. "
+                    "Token validation denied."
+                )
+                return {
+                    "valid": False,
+                    "error": "Unable to verify token signature"
+                }
             else:
                 decoded = jwt.decode(
                     token,
                     f"-----BEGIN PUBLIC KEY-----\n{key}\n-----END PUBLIC KEY-----",
                     algorithms=["RS256"],
                     issuer=expected,
+                    audience="thinklife-backend", 
                     options={"verify_exp": True}
                 )
             

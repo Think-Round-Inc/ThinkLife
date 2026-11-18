@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore", message="You are using a Python version.*past 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict 
 
 # Load env
 load_dotenv()
@@ -108,11 +108,23 @@ app.add_middleware(KeycloakAuthMiddleware)
 
 
 # Models
-class APIBrainRequest(BaseModel):
-    message: str
+class APIBrainRequest(BaseModel): #Pydantic model implemented.
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+    )
+
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+    )
+
     application: str
-    user_context: Dict[str, Any] = {}
+
+    user_context: Dict[str, Any] = Field(default_factory=dict)
+
     session_id: Optional[str] = None
+
     metadata: Optional[Dict[str, Any]] = None
 
 class APIBrainResponse(BaseModel):
@@ -127,6 +139,54 @@ class HealthResponse(BaseModel):
     status: str
     brain_status: Dict[str, Any]
     timestamp: str
+
+#Pydantic input validation layer  
+class ChatRequest(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+    )
+
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+    )
+
+    user_context: Dict[str, Any] = Field(default_factory=dict)
+
+    session_id: Optional[str] = None
+
+    user_id: Optional[str] = None
+
+class GenericAppRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+    )
+
+    user_context: Dict[str, Any] = Field(default_factory=dict)
+    session_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class AppRequest(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+    )
+
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+    )
+
+    user_context: Dict[str, Any] = Field(default_factory=dict)
+
+    session_id: Optional[str] = None
+
+    metadata: Optional[Dict[str, Any]] = None
 
 
 # Dependencies
@@ -153,8 +213,22 @@ async def process_brain_request(
 
         kc_context = get_user_context(http_request) if http_request else {}
         token = extract_token_from_header(http_request) or extract_token_from_cookie(http_request) if http_request else None
-        
-        merged_context = {**request.user_context, **kc_context}
+        client_context = dict(request.user_context or {})
+        # Security-sensitive identity fields must not come from the client.
+        for field in [
+            "roles",
+            "permissions",
+            "authenticated",
+            "is_authenticated",
+            "user_id",
+        ]:
+            client_context.pop(field, None)
+        # Trusted Keycloak context controls identity and authorization. 
+        merged_context = {
+             **client_context,
+              **kc_context,
+        }
+
         metadata = request.metadata or {}
         if token: metadata["token"] = token
         
@@ -264,25 +338,47 @@ async def get_session(session_id: str):
 # Zoe API
 @app.post("/api/zoe/chat")
 async def zoe_chat_endpoint(
-    request: Dict[str, Any], 
+    request: ChatRequest, 
     zoe: ZoeService = Depends(get_zoe),
     http_request: Request = None
 ):
     try:
         kc_context = get_user_context(http_request) if http_request else {}
         kc_uid = get_user_id(http_request) if http_request else None
-        
-        msg = request.get("message", "")
-        uid = kc_uid or request.get("user_id", "anonymous")
-        sid = request.get("session_id")
-        ctx = {**request.get("user_context", {}), **kc_context}
+        token =(
+            extract_token_from_header(http_request)
+            or extract_token_from_cookie(http_request)
+            if http_request
+            else None
+        )
+        msg = request.message
+        uid = kc_uid or request.user_id or "anonymous"
+        sid = request.session_id
+        client_context = dict(request.user_context or {})
 
+        # Security-sensitive identity fields must come only
+        # from validated Keycloak context.
+        for field in [
+            "roles",
+            "permissions",
+            "authenticated",
+            "is_authenticated",
+            "user_id",
+        ]:
+            client_context.pop(field, None)
+
+        ctx = {
+            **client_context,
+            **kc_context,
+        }
+        if token:
+            ctx["token"] = token
+        logger.warning(
+            "RBAC SPOOF TEST - trusted roles=%s",
+            ctx.get("roles", [])
+        )
         if ctx.get("ace_score", 0) >= 4:
             raise HTTPException(403, "Chat restricted due to ACE score safety policy.")
-
-        if not msg.strip(): raise HTTPException(400, "Message empty")
-        if len(msg) > 10000: raise HTTPException(400, "Message too long")
-
         return await zoe.process_message(
             message=msg, user_id=uid, session_id=sid, user_context=ctx, application="chatbot"
         )
@@ -314,24 +410,69 @@ async def get_zoe_health(zoe: ZoeService = Depends(get_zoe)):
 
 # Legacy / App Endpoints
 @app.post("/api/chat")
-async def legacy_chat_endpoint(request: Dict[str, Any], zoe: ZoeService = Depends(get_zoe)):
+async def legacy_chat_endpoint(
+    request: ChatRequest,
+    http_request: Request,
+    zoe: ZoeService = Depends(get_zoe)
+):
     try:
-        msg = request.get("message", "")
-        uid = request.get("user_id", "anonymous")
-        sid = request.get("session_id")
-        ctx = request.get("user_context", {})
+        kc_context = get_user_context(http_request)
+        kc_uid = get_user_id(http_request)
+
+        token = (
+            extract_token_from_header(http_request)
+            or extract_token_from_cookie(http_request)
+        )
+
+        msg = request.message
+        uid = kc_uid or request.user_id or "anonymous"
+        sid = request.session_id
+
+        client_context = dict(request.user_context or {})
+
+        for field in [
+            "roles",
+            "permissions",
+            "authenticated",
+            "is_authenticated",
+            "user_id",
+        ]:
+            client_context.pop(field, None)
+
+        ctx = {
+            **client_context,
+            **kc_context,
+        }
+        logger.warning(
+            "RBAC API CHAT TEST - trusted roles=%s",
+            ctx.get("roles", [])
+        )
+
+        if token:
+            ctx["token"] = token
 
         if ctx.get("ace_score", 0) >= 4:
-            return {"success": False, "error": "ACE score restriction", "restricted": True}
+            return {
+                "success": False,
+                "error": "ACE score restriction",
+                "restricted": True
+            }
 
-        if not msg.strip(): return {"success": False, "error": "No message"}
-        
-        res = await zoe.process_message(msg, uid, sid, ctx, "chatbot")
-        
+        res = await zoe.process_message(
+            msg,
+            uid,
+            sid,
+            ctx,
+            "chatbot"
+        )
+
         audio = None
+
         if (ctx.get("avatar_mode") or ctx.get("test_tts")) and res.get("success"):
-            audio = await tts_service.generate_speech(res.get("response", ""))
-            
+            audio = await tts_service.generate_speech(
+                res.get("response", "")
+            )
+
         return {
             "response": res.get("response", ""),
             "success": res.get("success", False),
@@ -340,38 +481,77 @@ async def legacy_chat_endpoint(request: Dict[str, Any], zoe: ZoeService = Depend
             "audio_data": audio,
             "timestamp": datetime.now().isoformat()
         }
+
     except Exception as e:
         logger.exception("Legacy chat error")
-        return {"success": False, "error": str(e), "response": "Technical error"}
+        return {
+            "success": False,
+            "error": str(e),
+            "response": "Technical error"
+        }
 
 
 # Generic App Handlers
 @app.post("/api/{app_name}")
-async def generic_app_endpoint(app_name: str, request: Dict[str, Any], brain: CortexFlow = Depends(get_brain)):
+async def generic_app_endpoint(app_name: str, request: GenericAppRequest, brain: CortexFlow = Depends(get_brain)):
     # Validate app_name against allowed list if needed, or let Brain handle it
     req = APIBrainRequest(
-        message=request.get("message", ""),
-        application=app_name,
-        user_context=request.get("user_context", {}),
-        session_id=request.get("session_id"),
-        metadata=request.get("metadata", {})
-    )
+    message=request.message,
+    application=app_name,
+    user_context=request.user_context,
+    session_id=request.session_id,
+    metadata=request.metadata,
+   )
     return await process_brain_request(req, brain)
 
 # Explicit mappings for backward compatibility
+# Explicit mappings for backward compatibility
 @app.post("/api/healing-rooms")
-async def healing_rooms(r: Dict[str, Any], b: CortexFlow = Depends(get_brain)): return await generic_app_endpoint("healing-rooms", r, b)
+async def healing_rooms(
+    request: GenericAppRequest,
+    brain: CortexFlow = Depends(get_brain),
+):
+    return await generic_app_endpoint(
+        "healing-rooms",
+        request,
+        brain,
+    )
+
 
 @app.post("/api/inside-our-ai")
-async def inside_ai(r: Dict[str, Any], b: CortexFlow = Depends(get_brain)): return await generic_app_endpoint("inside-our-ai", r, b)
+async def inside_ai(
+    request: GenericAppRequest,
+    brain: CortexFlow = Depends(get_brain),
+):
+    return await generic_app_endpoint(
+        "inside-our-ai",
+        request,
+        brain,
+    )
+
 
 @app.post("/api/compliance")
-async def compliance(r: Dict[str, Any], b: CortexFlow = Depends(get_brain)): return await generic_app_endpoint("compliance", r, b)
+async def compliance(
+    request: GenericAppRequest,
+    brain: CortexFlow = Depends(get_brain),
+):
+    return await generic_app_endpoint(
+        "compliance",
+        request,
+        brain,
+    )
+
 
 @app.post("/api/exterior-spaces")
-async def exterior(r: Dict[str, Any], b: CortexFlow = Depends(get_brain)): return await generic_app_endpoint("exterior-spaces", r, b)
-
-
+async def exterior(
+    request: GenericAppRequest,
+    brain: CortexFlow = Depends(get_brain),
+):
+    return await generic_app_endpoint(
+        "exterior-spaces",
+        request,
+        brain,
+    )
 @app.get("/health")
 async def health_check():
     return {

@@ -105,6 +105,18 @@ source .venv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
+#### Install spaCy English Language Model
+
+The sensitive data redaction layer uses Microsoft Presidio with spaCy for local PII detection.
+
+Install the required English language model:
+
+```bash
+python -m spacy download en_core_web_lg
+```
+
+This model is required for the local sensitive data redaction and PII detection functionality.
+
 
 #### Create Backend Environment File
 Create a file named `.env` in the `backend/` directory with the following content:

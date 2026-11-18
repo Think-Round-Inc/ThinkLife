@@ -40,11 +40,29 @@ def create_user_context(
             safety_preferences={},
             healing_goals=[]
         )
-    
+    #roles = user_context.get("roles", []) if user_context else []  # step 2: RBAC (CODE ADDED)
+    #Step 6D: RBAC Task Code added here for strengthening step2.(Replacing above single line with the below code)
+    is_authenticated = bool(
+        user_context
+        and (
+            user_context.get("authenticated")
+            or user_context.get("is_authenticated")
+        )
+    )
+
+    roles = (
+        user_context.get("roles", [])
+        if is_authenticated and user_context
+        else []
+    )
+    token = user_context.get("token") if user_context else None # RBAC small line coded for clearing the token problem
+    #step 6D above code added here.
     return UserContext(
         user_id=user_id,
         session_id=session_id,
-        is_authenticated=True,
+        is_authenticated=is_authenticated,  #change from is_authenticated=True, to is_authenticated=True,as part of step 6D : RBAC Task.
+        roles=roles,         # CODE ADDED HERE FOR STEP 2.
+        token=token, # token added in return RBAC step.
         user_profile=user_profile,
         trauma_context=trauma_context
     )
