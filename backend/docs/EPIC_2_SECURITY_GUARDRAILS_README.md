@@ -5,8 +5,8 @@
 **Project:** ThinkLife — Generative AI Backend  
 **Component:** ThinkLife Brain / Zoe AI Companion 
 **Author:** Bhargavi
-**Branch:** To be confirmed  
-**Pull Request:** To be created
+**Branch:** Bhargavi 
+**Pull Request:** https://github.com/Think-Round-Inc/ThinkLife/pull/93
 
 ## 1. User Stories
 
