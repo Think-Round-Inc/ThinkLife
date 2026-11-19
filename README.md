@@ -176,3 +176,8 @@ We're committed to building AI tools that genuinely serve healing and transforma
 **Think Round Inc. © 2026**  
 *Experimental AI platform by the Generative AI Engineers team*  
 *Building technology with purpose, transparency, and heart*
+
+## Release governance (User Story 6.2)
+
+See [release governance](docs/release/README.md) for version/dependency evidence,
+environment validation, deployment and rollback checklists, and post-release smoke tests.
