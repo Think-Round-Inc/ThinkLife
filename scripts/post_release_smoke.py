@@ -48,12 +48,12 @@ def check(url, predicate, attempts=3, timeout=10, delay=2):
     return {'passed': False, 'attempts': attempts, 'reason': reason}
 
 
-def checks(frontend, backend, keycloak, realm, commit, release_id):
+def checks(frontend, backend, keycloak, realm, commit, release_id, expected_backend_version):
     issuer = keycloak + '/realms/' + quote(realm, safe='')
     return [
         ('frontend_health', frontend + '/api/health', lambda d:d.get('status') == 'healthy' and d.get('service') == 'ThinkLife Frontend'),
         ('frontend_release', frontend + '/release.json', lambda d:d.get('source_commit') == commit and d.get('release_id') == release_id and d.get('working_tree_dirty') is False),
-        ('backend_identity', backend + '/', lambda d:d.get('message') == 'ThinkLife Backend' and d.get('version') == '0.7.0'),
+        ('backend_identity', backend + '/', lambda d:d.get('message') == 'ThinkLife Backend' and d.get('version') == expected_backend_version),
         ('backend_health', backend + '/health', lambda d:d.get('status') == 'healthy' and d.get('brain') is True and d.get('zoe') is True),
         ('brain_health', backend + '/api/brain/health', lambda d:d.get('status') == 'healthy' and d.get('brain_status', {}).get('overall') == 'healthy'),
         ('zoe_health', backend + '/api/zoe/health', lambda d:d.get('service') == 'zoe' and all(d.get(k) is True for k in ('initialized','zoe_core_available','zoe_agent_available')) and d.get('zoe_agent_health', {}).get('status') == 'healthy'),
@@ -69,6 +69,7 @@ def main():
     p.add_argument('--realm', default='thinklife')
     p.add_argument('--expected-commit', required=True)
     p.add_argument('--release-id', required=True)
+    p.add_argument('--expected-backend-version', required=True, help='Expected version returned by backend root endpoint')
     p.add_argument('--attempts', type=int, default=3)
     p.add_argument('--timeout', type=float, default=10)
     p.add_argument('--delay', type=float, default=2)
@@ -79,7 +80,7 @@ def main():
     if not 1 <= args.attempts <= 10 or not 0 < args.timeout <= 60 or not 0 <= args.delay <= 30:
         p.error('attempts 1..10, timeout (0,60], delay [0,30] required')
     report = {'release_id': args.release_id, 'expected_commit': args.expected_commit, 'checked_at': datetime.now(timezone.utc).isoformat(), 'checks': []}
-    for name, url, predicate in checks(args.frontend_url, args.backend_url, args.keycloak_url, args.realm, args.expected_commit, args.release_id):
+    for name, url, predicate in checks(args.frontend_url, args.backend_url, args.keycloak_url, args.realm, args.expected_commit, args.release_id, args.expected_backend_version):
         result = {'name': name, 'url': url, **check(url, predicate, args.attempts, args.timeout, args.delay)}
         report['checks'].append(result)
         print(('PASS ' if result['passed'] else 'FAIL ') + name + ': ' + result.get('reason', 'OK'), flush=True)

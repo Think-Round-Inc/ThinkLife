@@ -86,9 +86,10 @@ class EnvironmentTests(unittest.TestCase):
 
 class ManifestTests(unittest.TestCase):
     def test_models_separate_and_dependency_coverage(self):
-        m = build('test-release','gpt-configured-test')
+        m = build('test-release','gpt-configured-test','1.2.3')
         self.assertEqual(m['models']['brain_openai_configured'],'gpt-configured-test')
-        self.assertEqual(m['models']['zoe_chat_hardcoded'],'gpt-4o-mini')
+        self.assertEqual(m['backend_root_version'],'1.2.3')
+        self.assertTrue(any(x['model'] == 'gpt-4o-mini' and x['path'] == 'backend/plugins/zoe_agent.py' for x in m['models']['references']))
         self.assertEqual(len(m['source_commit']),40)
         for name in ('requirements.txt','backend/requirements.txt','faq-bot-rag/requirements.txt','frontend','docker-compose.yml'):
             self.assertIn(name,m['dependencies'])
@@ -102,7 +103,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_generator_works_outside_repo_cwd(self):
         with tempfile.TemporaryDirectory() as d:
-            result = subprocess.run([sys.executable,str(ROOT/'scripts/generate_release_manifest.py'),'--release-id','test','--output-dir',d],cwd=d,capture_output=True,text=True)
+            result = subprocess.run([sys.executable,str(ROOT/'scripts/generate_release_manifest.py'),'--release-id','test','--backend-version','1.2.3','--output-dir',d],cwd=d,capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertTrue((Path(d)/'release.md').is_file())
 
@@ -155,7 +156,7 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(result['attempts'],2)
 
     def test_version_mismatch_and_dirty_fail(self):
-        predicate = checks(self.base,self.base,self.base,'thinklife','a'*40,'rc1')[1][2]
+        predicate = checks(self.base,self.base,self.base,'thinklife','a'*40,'rc1','1.2.3')[1][2]
         self.assertTrue(predicate({'source_commit':'a'*40,'release_id':'rc1','working_tree_dirty':False}))
         self.assertFalse(predicate({'source_commit':'b'*40,'release_id':'rc1','working_tree_dirty':False}))
         self.assertFalse(predicate({'source_commit':'a'*40,'release_id':'rc1','working_tree_dirty':True}))
@@ -165,17 +166,39 @@ class SmokeTests(unittest.TestCase):
         self.__class__.routes = {
             '/api/health':(200,{'status':'healthy','service':'ThinkLife Frontend'}),
             '/release.json':(200,{'source_commit':'a'*40,'release_id':'rc1','working_tree_dirty':False}),
-            '/':(200,{'message':'ThinkLife Backend','version':'0.7.0'}),
+            '/':(200,{'message':'ThinkLife Backend','version':'1.2.3'}),
             '/health':(200,{'status':'healthy','brain':True,'zoe':True}),
             '/api/brain/health':(200,{'status':'healthy','brain_status':{'overall':'healthy'}}),
             '/api/zoe/health':(200,{'service':'zoe','initialized':True,'zoe_core_available':True,'zoe_agent_available':True,'zoe_agent_health':{'status':'healthy'}}),
             '/realms/thinklife/.well-known/openid-configuration':(200,{'issuer':issuer, 'authorization_endpoint':issuer+'/auth','token_endpoint':issuer+'/token','jwks_uri':issuer+'/keys'})}
         with tempfile.TemporaryDirectory() as d:
-            args = ['smoke','--frontend-url',self.base,'--backend-url',self.base,'--keycloak-url',self.base,'--expected-commit','a'*40,'--release-id','rc1','--attempts','1','--report',d+'/report']
+            args = ['smoke','--frontend-url',self.base,'--backend-url',self.base,'--keycloak-url',self.base,'--expected-commit','a'*40,'--release-id','rc1','--expected-backend-version','1.2.3','--attempts','1','--report',d+'/report']
             with patch.object(sys,'argv',args), contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(smoke_main(),0)
-                self.__class__.routes['/api/brain/health'] = (500,{'detail':'missing method'})
-                self.assertEqual(smoke_main(),1)
+                # All checks should pass with the expected backend version.
+                self.assertEqual(smoke_main(), 0)
+
+                # Backend returns 0.7.0, but expected version is 1.2.3.
+                self.__class__.routes['/'] = (
+                    200, {'message': 'ThinkLife Backend', 'version': '0.7.0'}
+                )
+                self.assertEqual(smoke_main(), 1)
+
+                # Confirm the backend identity check specifically failed.
+                version_report = json.loads(Path(d+'/report').read_text())
+                backend_result = next(
+                    x for x in version_report['checks']
+                    if x['name'] == 'backend_identity'
+                )
+                self.assertFalse(backend_result['passed'])
+
+                # Restore correct version, then test brain health failure.
+                self.__class__.routes['/'] = (
+                    200, {'message': 'ThinkLife Backend', 'version': '1.2.3'}
+                )
+                self.__class__.routes['/api/brain/health'] = (
+                    500, {'detail': 'missing method'}
+                )
+                self.assertEqual(smoke_main(), 1)
             report=json.loads(Path(d+'/report').read_text())
             self.assertEqual(len(report['checks']),7)
             self.assertFalse(report['passed'])

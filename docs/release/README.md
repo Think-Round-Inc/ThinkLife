@@ -27,12 +27,10 @@ Compared with the agreed `arvind` baseline (`f488f9ff18b459fff267d3e080a0e34fc76
 | `scripts/post_release_smoke.py` | New | Verify deployed HTTP endpoints and release identity. |
 | `tests/release/test_release.py` | New | Unit tests for release tooling. |
 | `docs/release/environment-contract.json` | New | Reviewed ENV rules and source references. |
-| `docs/release/BASELINE_RELEASE.md` | New | Historical preview (not release approval). |
 | `docs/release/README.md` | New | US6.2 overview and acceptance evidence. |
 | `docs/release/DEPLOYMENT_CHECKLIST.md` | New | Required pre-/post-deployment steps. |
 | `docs/release/RELEASE_RECORD.md` | New | Template for approval and evidence links. |
 | `docs/release/ROLLBACK_PLAN.md` | New | Operator-controlled recovery procedure. |
-| `docs/release/smoke-results.json` | New | Historical local smoke-test snapshot. |
 | `US6.2-Team-Runbook.md` | New | Operator commands and troubleshooting. |
 | `.github/workflows/release-governance.yml` | New | Offline CI checks and candidate artifact upload. |
 | `.github/workflows/post-release-smoke.yml` | New | Manual/reusable deployed-service smoke workflow. |
@@ -90,7 +88,7 @@ verify the restored release with its own ID and commit SHA.
 
 ## How to run
 
-Run from the **repository root**. See [US6.2-Team-Runbook.md](../../US6.2-Team-Runbook.md) for Windows CMD examples, troubleshooting and release sign-off.
+Run from the **repository root**. See [US6.2-Team-Runbook.md](US6.2-Team-Runbook.md) for Windows CMD examples, troubleshooting and release sign-off.
 
 ```bash
 python -m unittest discover -s tests/release -v
@@ -109,7 +107,7 @@ python scripts/generate_release_manifest.py --release-id 0.7.0-rc1 --openai-mode
 
 A successful clean run reports `dirty=False`. Do not edit the dirty flag or treat a dirty candidate as deployment-ready. Deploy the matching artifact, then run `post_release_smoke.py` with `--release-id`, `--expected-commit` (the deployed 40-character SHA), and the correct service URLs. Exit `0` means all seven checks passed; exit `1` means at least one failed.
 
-**Evidence locations:** Local outputs are in ignored `.release/`. The [successful Release governance workflow](https://github.com/Think-Round-Inc/ThinkLife/actions/runs/42542535840) uploaded candidate `manifest.json`, `release.md` and **contract-only** `env-validation.json` as an Actions Artifact. This is not a live-deployment pass. A separate manually invoked/reusable smoke workflow uploads smoke results when produced. The committed [smoke snapshot](smoke-results.json) is historical and records `brain_health` HTTP 500, not a passing release.
+**Evidence locations:** Local outputs are in ignored `.release/`. The [successful Release governance workflow](https://github.com/Think-Round-Inc/ThinkLife/actions/runs/42542535840) uploaded candidate `manifest.json`, `release.md` and **contract-only** `env-validation.json` as an Actions Artifact. This is not a live-deployment pass. A separate manually invoked/reusable smoke workflow uploads smoke results when produced.
 
 ## Acceptance criteria mapping
 
@@ -132,3 +130,11 @@ Depends on the `arvind` baseline, Git/Python and the existing application interf
 - The successful offline CI run does not prove actual ENV differences, working credentials, healthy deployed services, login/chat behavior or a successful rollback.
 - Model aliases and source-file hashes are not immutable provider snapshot IDs; unpinned Python requirements and mutable container tags also limit reproducibility. Retain tested build artifacts and actual dependency/image versions.
 - Smoke checks use the current backend identity expectation (`0.7.0`); update the check with an intentional app version change. Deployment, rollback and post-release workflow invocation remain operator-controlled.
+
+### Backend Version Management
+
+The expected backend root endpoint version is maintained in `docs/release/backend-version.txt`.
+When the backend root endpoint version changes, the release owner must update this file in the same pull request before generating the release manifest.
+The release governance workflow reads this file and passes its value to `generate_release_manifest.py`.
+The post-release smoke test must use the same expected backend version when validating the deployed service.
+This version is maintained explicitly and is not automatically synchronized with the backend application. The release owner must verify that it matches the deployed backend.

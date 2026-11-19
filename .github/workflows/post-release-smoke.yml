@@ -26,6 +26,10 @@ on:
         description: Release ID in frontend release.json
         required: true
         type: string
+      expected_backend_version:
+        description: Version returned by backend root endpoint
+        required: true
+        type: string
   workflow_call:
     inputs:
       frontend_url:
@@ -44,6 +48,9 @@ on:
         required: true
         type: string
       release_id:
+        required: true
+        type: string
+      expected_backend_version:
         required: true
         type: string
 permissions:
@@ -65,11 +72,13 @@ jobs:
           REALM: ${{ inputs.realm }}
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
           RELEASE_ID: ${{ inputs.release_id }}
+          EXPECTED_BACKEND_VERSION: ${{ inputs.expected_backend_version }}
         run: >-
           python scripts/post_release_smoke.py
           --frontend-url "$FRONTEND_URL" --backend-url "$BACKEND_URL"
           --keycloak-url "$KEYCLOAK_URL" --realm "$REALM"
           --expected-commit "$EXPECTED_COMMIT" --release-id "$RELEASE_ID"
+          --expected-backend-version "$EXPECTED_BACKEND_VERSION"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

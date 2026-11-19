@@ -1,6 +1,6 @@
 # User Story 6.2: Release Governance Runbook
 
-This runbook provides operator commands for the [US6.2 README](docs/release/README.md). It covers the existing release tooling on branch `Feifan`; it does not deploy the app, repair its business logic or certify a production release.
+This runbook provides operator commands for the [US6.2 README](README.md). It covers the existing release tooling on branch `Feifan`; it does not deploy the app, repair its business logic or certify a production release.
 
 ## 1. Requirements and Deliverables
 
@@ -14,6 +14,24 @@ This runbook provides operator commands for the [US6.2 README](docs/release/READ
 | Post-release smoke | `post_release_smoke.py` | `.release/smoke-results.json` |
 
 **Prerequisites:** Windows CMD commands below assume the repository root, Python 3.11 and Git. The release scripts use the standard library. The running application and Keycloak are required only for live smoke tests. Do not commit `.env` files or secrets.
+
+### Backend Version Management
+
+The expected backend version is recorded in `docs/release/backend-version.txt`.
+
+Before preparing a release:
+
+1. Confirm the version returned by the deployed backend root endpoint (`GET /`).
+2. If the backend root version has changed, update `docs/release/backend-version.txt` in the same pull request.
+3. Commit the updated version file before running the release governance workflow.
+4. Pass the same version to post-release smoke testing using `--expected-backend-version`.
+
+Example (run from the repository root):
+
+```bat
+python scripts/generate_release_manifest.py --release-id 0.7.0-rc1 --backend-version 0.7.0
+
+The version file is maintained manually. Updating it does not change the backend application version. The release owner must verify that the recorded version matches the deployed backend.
 
 ## 2. Run the Offline Governance Tests
 
@@ -99,7 +117,7 @@ Exit `0`: all pass. Exit `1`: at least one fails. Exit `2`: invalid CLI argument
 
 **Failures:** HTTP 500 indicates a server-side error; check service logs. 404 suggests a missing URL/endpoint; 401/403 may indicate access restrictions; redirects fail; connection/TLS errors suggest reachability issues; contract mismatch means JSON or release fields are wrong. Never turn a required failure into a pass.
 
-The committed [historical smoke report](docs/release/smoke-results.json) recorded six passes and `brain_health` HTTP 500 on October 11, 2026. It does not describe the latest deployed service. The missing `CortexFlow.get_health_status()` in the inspected baseline belongs to the application owner, outside US6.2.
+An earlier local smoke test reported `brain_health` HTTP 500 on October 11, 2026. This historical result does not represent the current deployed service. The missing `CortexFlow.get_health_status()` belongs to the application owner and is outside the scope of US6.2.
 
 ## 8. Manual Functional Verification and Sign-off
 

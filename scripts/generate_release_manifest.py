@@ -1,6 +1,5 @@
 """ Generate traceable release evidence and frontend build metadata """
 import argparse
-import ast
 import json
 import re
 from pathlib import Path
@@ -20,26 +19,23 @@ def dependency_inventory():
     return result
 
 
-def build(release_id, openai_model):
+def build(release_id, openai_model, backend_version):
     if not re.fullmatch(r'[A-Za-z0-9_.-]+', release_id):
         raise ValueError('release-id must contain only letters, digits, dots, underscores or hyphens')
     if not re.fullmatch(r'[A-Za-z0-9_.:-]+', openai_model):
         raise ValueError('Invalid model identifier')
+    if not isinstance(backend_version, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._+-]*', backend_version):
+        raise ValueError('Invalid backend version')
     package = json.loads((ROOT / 'frontend/package.json').read_text())
     references = model_inventory()
-    def model_at(path, prefix):
-        matches = {x['model'] for x in references if x['path'] == path and x['model'].startswith(prefix)}
-        if len(matches) != 1:
-            raise ValueError('Review model inventory: ambiguous or missing model in ' + path)
-        return matches.pop()
-    tree = ast.parse((ROOT / 'backend/main.py').read_text())
-    root_fn = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == 'root')
-    root_return = next(n for n in ast.walk(root_fn) if isinstance(n, ast.Return))
-    backend_version = ast.literal_eval(root_return.value)['version']
     dirty = bool(git('status', '--porcelain', '--untracked-files=normal'))
     return {'schema_version': 1, 'release_id': release_id, 'source_commit': git('rev-parse', 'HEAD'), 'working_tree_dirty': dirty,
             'frontend_version': package['version'], 'backend_root_version': backend_version,
-            'models': {'brain_openai_configured': openai_model, 'zoe_chat_hardcoded': model_at('backend/plugins/zoe_agent.py', 'gpt-'), 'faq_chat_hardcoded': model_at('faq-bot-rag/app/rag_chat.py', 'gpt-'), 'judge_default': model_at('backend/evaluators/base.py', 'gpt-'), 'zoe_tts': model_at('backend/agents/zoe/tts_service.py', 'tts-'), 'vector_default': model_at('backend/brain/data_sources/vector_db.py', 'text-embedding-'), 'faq_embedding': 'SDK default; resolve from captured langchain-openai version', 'references': references},
+            'models': {
+                'brain_openai_configured': openai_model,
+                'faq_embedding': 'SDK default; resolve from captured langchain-openai version',
+                'references': references
+            },
             'prompts': prompt_inventory(), 'dependencies': dependency_inventory(),
             'limitations': ['Model aliases do not pin a provider snapshot.', 'Source references include optional providers and defaults, not only active models.', 'Python requirements and container tags are not immutable locks; archive installed versions and image digests.', 'No backend commit endpoint exists; verify backend artifact digest in deployment evidence.']}
 
@@ -47,13 +43,14 @@ def build(release_id, openai_model):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--release-id', required=True)
+    parser.add_argument('--backend-version', required=True, help='Version returned by the deployed backend root endpoint')
     parser.add_argument('--openai-model', default='gpt-4o-mini', help='Actual deployment OPENAI_MODEL, or application default')
     parser.add_argument('--output-dir', type=Path, default=ROOT / '.release')
     parser.add_argument('--publish-frontend', action='store_true', help='Write public/release.json BEFORE next build')
     parser.add_argument('--require-clean', action='store_true')
     args = parser.parse_args()
     try:
-        data = build(args.release_id, args.openai_model)
+        data = build(args.release_id, args.openai_model, args.backend_version)
         if args.require_clean and data['working_tree_dirty']:
             raise ValueError('Release requires a committed, clean working tree')
         write_json(args.output_dir / 'manifest.json', data)

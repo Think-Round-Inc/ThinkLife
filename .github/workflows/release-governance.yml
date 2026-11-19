@@ -3,7 +3,7 @@ name: Release governance
 on:
   pull_request:
   push:
-    branches: [Feifan, main]
+    branches: [staging]
   workflow_dispatch:
 
 permissions:
@@ -26,7 +26,13 @@ jobs:
         run: python scripts/validate_release_env.py --check-contract
 
       - name: Generate candidate evidence
-        run: python scripts/generate_release_manifest.py --release-id "candidate-${GITHUB_SHA}" --require-clean
+        run: |
+          BACKEND_VERSION="$(tr -d '\r\n' < docs/release/backend-version.txt)"
+          test -n "$BACKEND_VERSION"
+          python scripts/generate_release_manifest.py \
+            --release-id "candidate-${GITHUB_SHA}" \
+            --backend-version "$BACKEND_VERSION" \
+            --require-clean
 
       - name: Upload release governance evidence
         uses: actions/upload-artifact@v4
