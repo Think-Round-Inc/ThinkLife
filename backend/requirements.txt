@@ -24,3 +24,4 @@ importlib-metadata>=6.0.0
 sentence-transformers
 langchain-huggingface
 cachetools
+rank-bm25
